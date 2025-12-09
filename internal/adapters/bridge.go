@@ -718,19 +718,17 @@ func LoadStateFromFile(ctx *Context, statePath string) []TokenT {
 	buf := make([]TokenT, max)
 	var count C.size_t
 
-	ok := C.llama_state_load_file(ctx, cPath, (*TokenT)(unsafe.Pointer(&buf[0])), C.size_t(max), (*C.size_t)(unsafe.Pointer(&count)))
+	ok := C.llama_state_load_file(ctx, cPath, (*TokenT)(unsafe.Pointer(&buf[0])), C.size_t(max), (*C.size_t)(&count))
 
 	if !ok {
 		log.Fatalf("LoadStateFromFile: error loading from file %s\n", statePath)
 	}
 
-	if count > C.ulong(len(buf)) {
-		count = C.ulong(len(buf))
-	}
-
 	runtime.KeepAlive(buf)
 
-	return buf[:count]
+	n := min(int(count), len(buf))
+	return buf[:n]
+
 }
 
 func SaveStateToFile(ctx *Context, statePath string, tokens []TokenT) {
@@ -745,68 +743,222 @@ func SaveStateToFile(ctx *Context, statePath string, tokens []TokenT) {
 	runtime.KeepAlive(tokens)
 }
 
-/*
-
 // Get the exact size needed to copy the state of a single sequence
-LLAMA_API size_t llama_state_seq_get_size(
-		struct llama_context * ctx,
-				llama_seq_id   seq_id);
+func GetSeqStateSize(ctx *Context, seq_id int32) uint {
+	return uint(C.llama_state_seq_get_size(ctx, C.llama_seq_id(seq_id)))
+}
 
 // Copy the state of a single sequence into the specified buffer
-LLAMA_API size_t llama_state_seq_get_data(
-		struct llama_context * ctx,
-						uint8_t * dst,
-						size_t   size,
-				llama_seq_id   seq_id);
+func GetSeqStateData(ctx *Context, seq_id int32) []uint8 {
+
+	size := GetSeqStateSize(ctx, seq_id)
+	buf := make([]uint8, size)
+
+	ok := C.llama_state_seq_get_data(ctx, (*C.uint8_t)(unsafe.Pointer(&buf[0])), C.size_t(size), C.llama_seq_id(seq_id))
+	if ok < 1 {
+		log.Fatalf("GetSeqStateData: Cannot get data at sequence number %d\n", seq_id)
+	}
+	runtime.KeepAlive((buf))
+	return buf
+
+}
 
 // Copy the sequence data (originally copied with `llama_state_seq_get_data`) into the specified sequence
 // Returns:
-//  - Positive: Ok
-//  - Zero: Failed to load
-LLAMA_API size_t llama_state_seq_set_data(
-		struct llama_context * ctx,
-				const uint8_t * src,
-						size_t   size,
-				llama_seq_id   dest_seq_id);
+//   - Positive: Ok
+//   - Zero: Failed to load
+func SetSeqStateData(ctx *Context, src []uint8, dest_seq_id int32) {
+	if len(src) < 1 {
+		log.Fatalf("SetSeqStateData: length of sequence data must be greater than 0\n")
+	}
 
-LLAMA_API size_t llama_state_seq_save_file(
-		struct llama_context * ctx,
-					const char * filepath,
-				llama_seq_id   seq_id,
-			const llama_token * tokens,
-						size_t   n_token_count);
+	ok := C.llama_state_seq_set_data(ctx, (*C.uint8_t)(unsafe.Pointer(&src[0])), C.size_t(len(src)), C.llama_seq_id(dest_seq_id))
 
-LLAMA_API size_t llama_state_seq_load_file(
-		struct llama_context * ctx,
-					const char * filepath,
-				llama_seq_id   dest_seq_id,
-					llama_token * tokens_out,
-						size_t   n_token_capacity,
-						size_t * n_token_count_out);
+	if ok < 1 {
+		log.Fatalf("SetSeqStateData: cannot set sequence state to destination %d\n", dest_seq_id)
+	}
+	runtime.KeepAlive(src)
+}
 
-typedef uint32_t llama_state_seq_flags;
+func SaveSeqStateToFile(ctx *Context, statePath string, seq_id int32, tokens []TokenT) {
+	if len(tokens) < 1 {
+		log.Fatalf("SaveSeqStateToFile: number of tokens must be greater than 0\n")
+	}
+	cPath := C.CString(statePath)
+	defer C.free(unsafe.Pointer(cPath))
 
-LLAMA_API size_t llama_state_seq_get_size_ext(
-		struct llama_context * ctx,
-				llama_seq_id   seq_id,
-		llama_state_seq_flags   flags);
+	ok := C.llama_state_seq_save_file(ctx, cPath, C.llama_seq_id(seq_id), (*TokenT)(unsafe.Pointer(&tokens[0])), C.size_t(len(tokens)))
 
-LLAMA_API size_t llama_state_seq_get_data_ext(
-		struct llama_context * ctx,
-						uint8_t * dst,
-						size_t   size,
-				llama_seq_id   seq_id,
-		llama_state_seq_flags   flags);
+	if ok < 1 {
+		log.Fatalf("SaveSeqStateToFile: Cannot save state to %s", statePath)
+	}
+	runtime.KeepAlive(tokens)
+}
 
-LLAMA_API size_t llama_state_seq_set_data_ext(
-		struct llama_context * ctx,
-				const uint8_t * src,
-						size_t   size,
-				llama_seq_id   dest_seq_id,
-		llama_state_seq_flags   flags);
+func LoadSeqStateFromFile(ctx *Context, statePath string, dest_seq_id int32) []TokenT {
+	cPath := C.CString(statePath)
+	defer C.free(unsafe.Pointer(cPath))
 
-//
-// Decoding
-//
+	max := NumCtx(ctx)
+
+	if max < 1 {
+		log.Fatalf("LoadStateFromFile: Context size must be greater than zero\n")
+	}
+
+	buf := make([]TokenT, max)
+	var count C.size_t
+
+	ok := C.llama_state_seq_load_file(ctx, cPath, C.llama_seq_id(dest_seq_id), (*TokenT)(unsafe.Pointer(&buf[0])), C.size_t(max), (*C.size_t)(&count))
+
+	if ok < 1 {
+		log.Fatalf("LoadStateFromFile: error loading from file %s\n", statePath)
+	}
+	runtime.KeepAlive(buf)
+
+	n := min(int(count), len(buf))
+	return buf[:n]
+
+}
+
+// work only with partial states, such as SWA KV cache or recurrent cache (e.g. Mamba)
+func GetSeqStateSizeExt(ctx *Context, seq_id int32, flags uint32) uint {
+	return uint(C.llama_state_seq_get_size_ext(ctx, C.llama_seq_id(seq_id), C.llama_state_seq_flags(flags)))
+}
+
+func GetSeqStateDataExt(ctx *Context, seq_id int32, flags uint32) []uint8 {
+
+	size := GetSeqStateSizeExt(ctx, seq_id, flags)
+	buf := make([]uint8, size)
+
+	ok := C.llama_state_seq_get_data_ext(ctx, (*C.uint8_t)(unsafe.Pointer(&buf[0])), C.size_t(size), C.llama_seq_id(seq_id), C.llama_state_seq_flags(flags))
+	if ok < 1 {
+		log.Fatalf("GetSeqStateDataExt: Cannot get data at sequence number %d\n", seq_id)
+	}
+	runtime.KeepAlive((buf))
+	return buf
+}
+
+func SetSeqStateDataExt(ctx *Context, src []uint8, dest_seq_id int32, flags uint32) {
+	if len(src) < 1 {
+		log.Fatalf("SetSeqStateData: length of sequence data must be greater than 0\n")
+	}
+
+	ok := C.llama_state_seq_set_data_ext(ctx, (*C.uint8_t)(unsafe.Pointer(&src[0])), C.size_t(len(src)), C.llama_seq_id(dest_seq_id), C.llama_state_seq_flags(flags))
+
+	if ok < 1 {
+		log.Fatalf("SetSeqStateDataExt: cannot set sequence state to destination %d\n", dest_seq_id)
+	}
+	runtime.KeepAlive(src)
+}
+
+/*
+
+// Allocates a batch of tokens on the heap that can hold a maximum of n_tokens
+    // Each token can be assigned up to n_seq_max sequence ids
+    // The batch has to be freed with llama_batch_free()
+    // If embd != 0, llama_batch.embd will be allocated with size of n_tokens * embd * sizeof(float)
+    // Otherwise, llama_batch.token will be allocated to store n_tokens llama_token
+    // The rest of the llama_batch members are allocated with size n_tokens
+    // All members are left uninitialized
+    LLAMA_API struct llama_batch llama_batch_init(
+            int32_t n_tokens,
+            int32_t embd,
+            int32_t n_seq_max);
+
+    // Frees a batch of tokens allocated with llama_batch_init()
+    LLAMA_API void llama_batch_free(struct llama_batch batch);
+
+    // Process a batch of tokens.
+    // In contrast to llama_decode() - this call does not use KV cache.
+    // For encode-decoder contexts, processes the batch using the encoder.
+    // Can store the encoder output internally for later use by the decoder's cross-attention layers.
+    //   0 - success
+    // < 0 - error. the memory state is restored to the state before this call
+    LLAMA_API int32_t llama_encode(
+            struct llama_context * ctx,
+              struct llama_batch   batch);
+
+    // Process a batch of tokens.
+    // Requires the context to have a memory.
+    // For encode-decoder contexts, processes the batch using the decoder.
+    // Positive return values does not mean a fatal error, but rather a warning.
+    // Upon fatal-error or abort, the ubatches that managed to be been processed will remain in the memory state of the context
+    //   To handle this correctly, query the memory state using llama_memory_seq_pos_min() and llama_memory_seq_pos_max()
+    // Upon other return values, the memory state is restored to the state before this call
+    //    0 - success
+    //    1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
+    //    2 - aborted     (processed ubatches will remain in the context's memory)
+    //   -1 - invalid input batch
+    // < -1 - fatal error (processed ubatches will remain in the context's memory)
+    LLAMA_API int32_t llama_decode(
+            struct llama_context * ctx,
+              struct llama_batch   batch);
+
+    // Set the number of threads used for decoding
+    // n_threads is the number of threads used for generation (single token)
+    // n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)
+    LLAMA_API void llama_set_n_threads(struct llama_context * ctx, int32_t n_threads, int32_t n_threads_batch);
+
+    // Get the number of threads used for generation of a single token.
+    LLAMA_API int32_t llama_n_threads(struct llama_context * ctx);
+
+    // Get the number of threads used for prompt and batch processing (multiple token).
+    LLAMA_API int32_t llama_n_threads_batch(struct llama_context * ctx);
+
+    // Set whether the context outputs embeddings or not
+    // TODO: rename to avoid confusion with llama_get_embeddings()
+    LLAMA_API void llama_set_embeddings(struct llama_context * ctx, bool embeddings);
+
+    // Set whether to use causal attention or not
+    // If set to true, the model will only attend to the past tokens
+    LLAMA_API void llama_set_causal_attn(struct llama_context * ctx, bool causal_attn);
+
+    // Set whether the model is in warmup mode or not
+    // If true, all model tensors are activated during llama_decode() to load and cache their weights.
+    LLAMA_API void llama_set_warmup(struct llama_context * ctx, bool warmup);
+
+    // Set abort callback
+    LLAMA_API void llama_set_abort_callback(struct llama_context * ctx, ggml_abort_callback abort_callback, void * abort_callback_data);
+
+    // Wait until all computations are finished
+    // This is automatically done when using one of the functions below to obtain the computation results
+    // and is not necessary to call it explicitly in most cases
+    LLAMA_API void llama_synchronize(struct llama_context * ctx);
+
+    // Token logits obtained from the last call to llama_decode()
+    // The logits for which llama_batch.logits[i] != 0 are stored contiguously
+    // in the order they have appeared in the batch.
+    // Rows: number of tokens for which llama_batch.logits[i] != 0
+    // Cols: n_vocab
+    // TODO: deprecate in favor of llama_get_logits_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
+    LLAMA_API float * llama_get_logits(struct llama_context * ctx);
+
+    // Logits for the ith token. For positive indices, Equivalent to:
+    // llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab
+    // Negative indicies can be used to access logits in reverse order, -1 is the last logit.
+    // returns NULL for invalid ids.
+    LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
+
+    // Get all output token embeddings.
+    // when pooling_type == LLAMA_POOLING_TYPE_NONE or when using a generative model,
+    // the embeddings for which llama_batch.logits[i] != 0 are stored contiguously
+    // in the order they have appeared in the batch.
+    // shape: [n_outputs*n_embd]
+    // Otherwise, returns NULL.
+    // TODO: deprecate in favor of llama_get_embeddings_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
+    LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
+
+    // Get the embeddings for the ith token. For positive indices, Equivalent to:
+    // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
+    // Negative indicies can be used to access embeddings in reverse order, -1 is the last embedding.
+    // shape: [n_embd] (1-dimensional)
+    // returns NULL for invalid ids.
+    LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
+
+    // Get the embeddings for a sequence id
+    // Returns NULL if pooling_type is LLAMA_POOLING_TYPE_NONE
+    // when pooling_type == LLAMA_POOLING_TYPE_RANK, returns float[n_cls_out] with the rank(s) of the sequence
+    // otherwise: float[n_embd] (1-dimensional)
+    LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
 
 */
