@@ -26,6 +26,10 @@ Type Aliases for c -> go
 
 type AdapterLoRA = C.struct_llama_adapter_lora
 
+type Batch = C.llama_batch
+
+type ChatMessage = C.llama_chat_message
+
 type Context = C.struct_llama_context
 type ContextParams = C.struct_llama_context_params
 
@@ -45,6 +49,7 @@ type RopeT = C.enum_llama_rope_type
 type Sampler = C.struct_llama_sampler
 type SamplerChainParams = C.struct_llama_sampler_chain_params
 
+type TokenAttr = C.enum_llama_token_attr
 type TokenT = C.int32_t
 
 type Vocab = C.struct_llama_vocab
@@ -667,7 +672,6 @@ func GetStateSize(ctx *Context) uint {
 
 // Copies the state to the specified destination address.
 // Destination needs to have allocated enough memory.
-// Returns the number of bytes copied
 func CopyStateData(ctx *Context) []byte {
 	stateSize := GetStateSize(ctx)
 	if stateSize == 0 {
@@ -851,114 +855,684 @@ func SetSeqStateDataExt(ctx *Context, src []uint8, dest_seq_id int32, flags uint
 	runtime.KeepAlive(src)
 }
 
-/*
+//
+// Decoding
+//
 
 // Allocates a batch of tokens on the heap that can hold a maximum of n_tokens
-    // Each token can be assigned up to n_seq_max sequence ids
-    // The batch has to be freed with llama_batch_free()
-    // If embd != 0, llama_batch.embd will be allocated with size of n_tokens * embd * sizeof(float)
-    // Otherwise, llama_batch.token will be allocated to store n_tokens llama_token
-    // The rest of the llama_batch members are allocated with size n_tokens
-    // All members are left uninitialized
-    LLAMA_API struct llama_batch llama_batch_init(
-            int32_t n_tokens,
-            int32_t embd,
-            int32_t n_seq_max);
+// Each token can be assigned up to n_seq_max sequence ids
+// The batch has to be freed with llama_batch_free()
+// If embd != 0, llama_batch.embd will be allocated with size of n_tokens * embd * sizeof(float)
+// Otherwise, llama_batch.token will be allocated to store n_tokens llama_token
+// The rest of the llama_batch members are allocated with size n_tokens
+// All members are left uninitialized
+func InitBatch(n_tokens int32, embd int32, n_seq_max int32) Batch {
+	return C.llama_batch_init(C.int32_t(n_tokens), C.int32_t(embd), C.int32_t(n_seq_max))
+}
 
-    // Frees a batch of tokens allocated with llama_batch_init()
-    LLAMA_API void llama_batch_free(struct llama_batch batch);
+// Frees a batch of tokens allocated with llama_batch_init()
+func FreeBatch(batch Batch) {
+	C.llama_batch_free(batch)
+}
 
-    // Process a batch of tokens.
-    // In contrast to llama_decode() - this call does not use KV cache.
-    // For encode-decoder contexts, processes the batch using the encoder.
-    // Can store the encoder output internally for later use by the decoder's cross-attention layers.
-    //   0 - success
-    // < 0 - error. the memory state is restored to the state before this call
-    LLAMA_API int32_t llama_encode(
-            struct llama_context * ctx,
-              struct llama_batch   batch);
+// Process a batch of tokens.
+// In contrast to llama_decode() - this call does not use KV cache.
+// For encode-decoder contexts, processes the batch using the encoder.
+// Can store the encoder output internally for later use by the decoder's cross-attention layers.
+//
+//	0 - success
+//
+// < 0 - error. the memory state is restored to the state before this call
+func EncodeBatch(ctx *Context, batch Batch) {
+	ok := C.llama_encode(ctx, batch)
+	if ok < 0 {
+		log.Fatalf("EncodeBatch: error encoding batch\n")
+	}
+}
 
-    // Process a batch of tokens.
-    // Requires the context to have a memory.
-    // For encode-decoder contexts, processes the batch using the decoder.
-    // Positive return values does not mean a fatal error, but rather a warning.
-    // Upon fatal-error or abort, the ubatches that managed to be been processed will remain in the memory state of the context
-    //   To handle this correctly, query the memory state using llama_memory_seq_pos_min() and llama_memory_seq_pos_max()
-    // Upon other return values, the memory state is restored to the state before this call
-    //    0 - success
-    //    1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
-    //    2 - aborted     (processed ubatches will remain in the context's memory)
-    //   -1 - invalid input batch
-    // < -1 - fatal error (processed ubatches will remain in the context's memory)
-    LLAMA_API int32_t llama_decode(
-            struct llama_context * ctx,
-              struct llama_batch   batch);
+// Process a batch of tokens.
+// Requires the context to have a memory.
+// For encode-decoder contexts, processes the batch using the decoder.
+// Positive return values does not mean a fatal error, but rather a warning.
+// Upon fatal-error or abort, the ubatches that managed to be been processed will remain in the memory state of the context
+//
+//	To handle this correctly, query the memory state using llama_memory_seq_pos_min() and llama_memory_seq_pos_max()
+//
+// Upon other return values, the memory state is restored to the state before this call
+//
+//	 0 - success
+//	 1 - could not find a KV slot for the batch (try reducing the size of the batch or increase the context)
+//	 2 - aborted     (processed ubatches will remain in the context's memory)
+//	-1 - invalid input batch
+//
+// < -1 - fatal error (processed ubatches will remain in the context's memory)
+func DecodeBatch(ctx *Context, batch Batch) {
+	ok := C.llama_decode(ctx, batch)
+	// TODO unsure these should be fatal
+	if ok == 1 {
+		log.Fatalf("DecodeBatch: could not find a KV slot for the batch (try reducing the size of the batch or increase the context)\n")
+	} else if ok == 2 {
+		log.Fatalf("DecodeBatch: aborted (processed ubatches will remain in the context's memory)\n")
+	} else if ok == -1 {
+		log.Fatalf("DecodeBatch: invalid input batch\n")
+	} else if ok < -1 {
+		log.Fatalf("DecodeBatch: fatal error (processed ubatches will remain in the context's memory)\n")
+	}
+}
 
-    // Set the number of threads used for decoding
-    // n_threads is the number of threads used for generation (single token)
-    // n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)
-    LLAMA_API void llama_set_n_threads(struct llama_context * ctx, int32_t n_threads, int32_t n_threads_batch);
+// Set the number of threads used for decoding
+// n_threads is the number of threads used for generation (single token)
+// n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)
+func SetNumDecodingThreads(ctx *Context, n_threads int32, n_threads_batch int32) {
+	C.llama_set_n_threads(ctx, C.int32_t(n_threads), C.int32_t(n_threads_batch))
+}
 
-    // Get the number of threads used for generation of a single token.
-    LLAMA_API int32_t llama_n_threads(struct llama_context * ctx);
+// Get the number of threads used for generation of a single token.
+func GetNumDecodingThreads(ctx *Context) int32 {
+	return int32(C.llama_n_threads(ctx))
+}
 
-    // Get the number of threads used for prompt and batch processing (multiple token).
-    LLAMA_API int32_t llama_n_threads_batch(struct llama_context * ctx);
+// Get the number of threads used for prompt and batch processing (multiple token).
+func GetNumDecodingThreadsBatch(ctx *Context) int32 {
+	return int32(C.llama_n_threads_batch(ctx))
+}
 
-    // Set whether the context outputs embeddings or not
-    // TODO: rename to avoid confusion with llama_get_embeddings()
-    LLAMA_API void llama_set_embeddings(struct llama_context * ctx, bool embeddings);
+// Set whether the context outputs embeddings or not
+// from llama.cpp -> TODO: rename to avoid confusion with llama_get_embeddings()
+func SetEmbeddings(ctx *Context, embeddings bool) {
+	C.llama_set_embeddings(ctx, C.bool(embeddings))
+}
 
-    // Set whether to use causal attention or not
-    // If set to true, the model will only attend to the past tokens
-    LLAMA_API void llama_set_causal_attn(struct llama_context * ctx, bool causal_attn);
+// Set whether to use causal attention or not
+// If set to true, the model will only attend to the past tokens
+func SetCausalAttn(ctx *Context, casual_attn bool) {
+	C.llama_set_causal_attn(ctx, C.bool(casual_attn))
+}
 
-    // Set whether the model is in warmup mode or not
-    // If true, all model tensors are activated during llama_decode() to load and cache their weights.
-    LLAMA_API void llama_set_warmup(struct llama_context * ctx, bool warmup);
+// Set whether the model is in warmup mode or not
+// If true, all model tensors are activated during llama_decode() to load and cache their weights.
+func SetWarmup(ctx *Context, warmup bool) {
+	C.llama_set_warmup(ctx, C.bool(warmup))
+}
 
-    // Set abort callback
-    LLAMA_API void llama_set_abort_callback(struct llama_context * ctx, ggml_abort_callback abort_callback, void * abort_callback_data);
+// Set abort callback
+// TODO: how tf do I do this
+// LLAMA_API void llama_set_abort_callback(struct llama_context * ctx, ggml_abort_callback abort_callback, void * abort_callback_data);
 
-    // Wait until all computations are finished
-    // This is automatically done when using one of the functions below to obtain the computation results
-    // and is not necessary to call it explicitly in most cases
-    LLAMA_API void llama_synchronize(struct llama_context * ctx);
+// Wait until all computations are finished
+// This is automatically done when using one of the functions below to obtain the computation results
+// and is not necessary to call it explicitly in most cases
+func Synchronize(ctx *Context) {
+	C.llama_synchronize(ctx)
+}
 
-    // Token logits obtained from the last call to llama_decode()
-    // The logits for which llama_batch.logits[i] != 0 are stored contiguously
-    // in the order they have appeared in the batch.
-    // Rows: number of tokens for which llama_batch.logits[i] != 0
-    // Cols: n_vocab
-    // TODO: deprecate in favor of llama_get_logits_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
-    LLAMA_API float * llama_get_logits(struct llama_context * ctx);
+// Logits for the ith token. For positive indices, Equivalent to:
+// llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab
+// Negative indicies can be used to access logits in reverse order, -1 is the last logit.
+// returns NULL for invalid ids.
+func GetIthTokenLogits(ctx *Context, vocab *Vocab, i int32) []float32 {
 
-    // Logits for the ith token. For positive indices, Equivalent to:
-    // llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab
-    // Negative indicies can be used to access logits in reverse order, -1 is the last logit.
-    // returns NULL for invalid ids.
-    LLAMA_API float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
+	nTokens := VocabNumTokens(vocab)
+	if nTokens <= 0 {
+		log.Fatalf("GetIthTokenLogits: invalid number of tokens %d\n", nTokens)
+	}
 
-    // Get all output token embeddings.
-    // when pooling_type == LLAMA_POOLING_TYPE_NONE or when using a generative model,
-    // the embeddings for which llama_batch.logits[i] != 0 are stored contiguously
-    // in the order they have appeared in the batch.
-    // shape: [n_outputs*n_embd]
-    // Otherwise, returns NULL.
-    // TODO: deprecate in favor of llama_get_embeddings_ith() (ref: https://github.com/ggml-org/llama.cpp/pull/14853#issuecomment-3113143522)
-    LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
+	ptr := C.llama_get_logits_ith(ctx, C.int32_t(i))
+	if ptr == nil {
+		log.Fatalf("GetIthTokenLogits: invalid index %d\n", i)
+	}
 
-    // Get the embeddings for the ith token. For positive indices, Equivalent to:
-    // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
-    // Negative indicies can be used to access embeddings in reverse order, -1 is the last embedding.
-    // shape: [n_embd] (1-dimensional)
-    // returns NULL for invalid ids.
-    LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
+	view := unsafe.Slice((*C.float)(unsafe.Pointer(ptr)), nTokens)
 
-    // Get the embeddings for a sequence id
-    // Returns NULL if pooling_type is LLAMA_POOLING_TYPE_NONE
-    // when pooling_type == LLAMA_POOLING_TYPE_RANK, returns float[n_cls_out] with the rank(s) of the sequence
-    // otherwise: float[n_embd] (1-dimensional)
-    LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
+	out := make([]float32, nTokens)
+	for j := range nTokens {
+		out[j] = float32(view[j])
+	}
+
+	return out
+}
+
+// Get the embeddings for the ith token. For positive indices, Equivalent to:
+// llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
+// Negative indicies can be used to access embeddings in reverse order, -1 is the last embedding.
+// shape: [n_embd] (1-dimensional)
+// returns NULL for invalid ids.
+func GetIthEmbeddings(ctx *Context, model *Model, i int32) []float32 {
+	nEmbd := ModelNumEmbd(model)
+	if nEmbd <= 0 {
+		log.Fatalf("GetIthEmbeddings: invalid embedding size %d\n", nEmbd)
+	}
+
+	ptr := C.llama_get_embeddings_ith(ctx, C.int32_t(i))
+	if ptr == nil {
+		log.Fatalf("GetEmbeddingsIth: invalid index %d\n", i)
+	}
+
+	view := unsafe.Slice((*C.float)(unsafe.Pointer(ptr)), nEmbd)
+
+	out := make([]float32, nEmbd)
+	for j := range nEmbd {
+		out[j] = float32(view[j])
+	}
+
+	return out
+}
+
+func GetIthSeqEmbeddings(ctx *Context, model *Model, seq_id int32) []float32 {
+	nEmbd := ModelNumEmbd(model)
+	if nEmbd <= 0 {
+		log.Fatalf("GetIthSeqEmbeddings: invalid embedding size %d\n", nEmbd)
+	}
+
+	ptr := C.llama_get_embeddings_seq(ctx, C.llama_seq_id(seq_id))
+	if ptr == nil {
+		log.Fatalf("GetIthSeqEmbeddings: invalid sequence id %d\n", seq_id)
+	}
+
+	view := unsafe.Slice((*C.float)(unsafe.Pointer(ptr)), nEmbd)
+
+	out := make([]float32, nEmbd)
+	for j := range nEmbd {
+		out[j] = float32(view[j])
+	}
+
+	return out
+}
+
+//
+// Vocab
+//
+
+func GetVocabText(vocab *Vocab, token TokenT) string {
+	cStr := C.llama_vocab_get_text(vocab, token)
+	out := C.GoString(cStr)
+	return out
+}
+
+func GetVocabScore(vocab *Vocab, token TokenT) float32 {
+	return float32(C.llama_vocab_get_score(vocab, token))
+}
+
+func GetVocabAttr(vocab *Vocab, token TokenT) TokenAttr {
+	return C.llama_vocab_get_attr(vocab, token)
+}
+
+// Check if the token is supposed to end generation (end-of-generation, eg. EOS, EOT, etc.)
+func VocabIsEOG(vocab *Vocab, token TokenT) bool {
+	return bool(C.llama_vocab_is_eog(vocab, token))
+}
+
+// Identify if Token Id is a control token or a render-able token
+func VocabIsControl(vocab *Vocab, token TokenT) bool {
+	return bool(C.llama_vocab_is_control(vocab, token))
+}
+
+// Special tokens
+// beginning-of-sentence
+func VocabBOS(vocab *Vocab) TokenT {
+	return C.llama_vocab_bos(vocab)
+}
+
+// end-of-sentence
+func VocabEOS(vocab *Vocab) TokenT {
+	return C.llama_vocab_eos(vocab)
+}
+
+// end-of-turn
+func VocabEOT(vocab *Vocab) TokenT {
+	return C.llama_vocab_eot(vocab)
+}
+
+// sentence separator
+func VocabSep(vocab *Vocab) TokenT {
+	return C.llama_vocab_sep(vocab)
+}
+
+// next-line
+func VocabNL(vocab *Vocab) TokenT {
+	return C.llama_vocab_nl(vocab)
+}
+
+// padding
+func VocabPad(vocab *Vocab) TokenT {
+	return C.llama_vocab_pad(vocab)
+}
+
+// mask
+func VocabMask(vocab *Vocab) TokenT {
+	return C.llama_vocab_mask(vocab)
+}
+
+func GetAddBOS(vocab *Vocab) bool {
+	return bool(C.llama_vocab_get_add_bos(vocab))
+}
+
+func GetAddEOS(vocab *Vocab) bool {
+	return bool(C.llama_vocab_get_add_eos(vocab))
+}
+
+func GetAddSep(vocab *Vocab) bool {
+	return bool(C.llama_vocab_get_add_sep(vocab))
+}
+
+func VocabFimPre(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_pre(vocab)
+}
+
+func VocabFimSuf(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_suf(vocab)
+}
+
+func VocabFimMid(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_mid(vocab)
+}
+
+func VocabFimPad(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_pad(vocab)
+}
+
+func VocabFimRep(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_rep(vocab)
+}
+
+func VocabFimSep(vocab *Vocab) TokenT {
+	return C.llama_vocab_fim_sep(vocab)
+}
+
+// Tokenization
+//
+// The API is thread-safe.
+//
+
+// Tokenize converts text into tokens using vocab and returns up to nTokensMax tokens.
+// It exits the program via log.Fatalf if nTokensMax < 1 or if tokenization fails.
+//
+// If addSpecial is true, BOS/EOS tokens may be added depending on the model
+// configuration. If parseSpecial is true, special and control tokens are
+// interpreted as tokens instead of plain text; parseSpecial does not insert
+// a leading space.
+func Tokenize(vocab *Vocab, text string, nTokensMax int32, addSpecial bool, parseSpecial bool) []TokenT {
+	cStr := C.CString(text)
+	defer C.free(unsafe.Pointer(cStr))
+
+	if nTokensMax < 1 {
+		log.Fatalf("Tokenize: max tokens is less than 1 (%d)\n", nTokensMax)
+	}
+
+	buf := make([]TokenT, nTokensMax)
+	ok := C.llama_tokenize(vocab, cStr, C.int32_t(len(text)), (*TokenT)(unsafe.Pointer(&buf[0])), C.int32_t(nTokensMax), C.bool(addSpecial), C.bool(parseSpecial))
+
+	if ok < 0 {
+		log.Fatalf("Tokenize: llama_tokenize failed with code %d\n", ok)
+	}
+	if ok == 0 {
+		return nil
+	}
+	n := int(ok)
+	if n > len(buf) {
+		log.Printf("Tokenize (WARN): Generated more tokens (%d) than buffer size (%d). Keeping only (%d) tokens\n", n, len(buf), len(buf))
+		n = len(buf)
+	}
+
+	runtime.KeepAlive(buf)
+	return buf[:n]
+}
+
+// Token Id -> Piece.
+// Uses the vocabulary in the provided context.
+// User can skip up to 'lStrip' leading spaces before copying (useful when encoding/decoding multiple tokens with 'add_space_prefix')
+// if special is true, special tokens are rendered in the output.
+func TokenToPiece(vocab *Vocab, token TokenT, lstrip int32, special bool) string {
+	bufSize := 128
+	buf := make([]byte, bufSize)
+
+	strLen := C.llama_token_to_piece(vocab, token, (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(bufSize), C.int32_t(lstrip), C.bool(special))
+
+	if int(strLen) > len(buf) {
+		log.Fatalf("TokenToPiece: length of output string (%d) greater than buffer (%d)\n", strLen, len(buf))
+	}
+
+	if strLen == 0 {
+		return ""
+	}
+
+	out := C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen)
+	return out
+}
+
+// Detokenize converts a slice of tokens back into text (the inverse of tokenization).
+// The destination buffer must be large enough to hold the full output.
+//
+// It returns the number of bytes written, up to textLenMax. On failure, it returns
+// a negative value indicating how many bytes would have been required.
+//
+// If removeSpecial is true, BOS/EOS tokens may be removed depending on model
+// configuration. If unparseSpecial is true, special tokens are rendered into
+// the output rather than skipped.
+func Detokenize(vocab *Vocab, tokens []TokenT, textLenMax int32, removeSpecial bool, unparseSpecial bool) string {
+	if textLenMax < 1 {
+		log.Fatalf("Detokenize: texLenMax is less than 1\n")
+	}
+
+	if len(tokens) == 0 {
+		return ""
+	}
+
+	buf := make([]byte, textLenMax)
+	strLen := C.llama_detokenize(vocab, (*TokenT)(unsafe.Pointer(&tokens[0])), C.int32_t(len(tokens)), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(textLenMax), C.bool(removeSpecial), C.bool(unparseSpecial))
+
+	if strLen < 0 {
+		log.Fatalf("Detokenize: buffer too small, need %d bytes (have %d)\n", -strLen, textLenMax)
+	}
+
+	if strLen == 0 {
+		return ""
+	}
+
+	out := C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen)
+
+	runtime.KeepAlive(tokens)
+	return out
+}
+
+//
+// Chat templates
+//
+
+// ApplyChatTemplate formats a chat history using either the provided template
+// or the model’s default template if tmpl is empty. It mirrors the behavior of
+// HuggingFace’s apply_chat_template, but only supports the predefined template
+// set used by llama_chat_apply_template.
+//
+// chat must contain at least one message. The function allocates a buffer large
+// enough to hold the formatted prompt and grows it if needed. If addAssistant
+// is true, the formatted output ends with the token(s) that begin an assistant
+// reply.
+//
+// The returned string is the fully formatted prompt. The function terminates the
+// program via log.Fatalf if template application fails.
+func ApplyChatTemplate(tmpl string, chat []ChatMessage, addAssistant bool) string {
+	if len(chat) < 1 {
+		log.Fatalf("ApplyChatTemplate: No chat messages in input slice\n")
+	}
+
+	cStr := C.CString(tmpl)
+	defer C.free(unsafe.Pointer(cStr))
+
+	charCount := 0
+	for _, message := range chat {
+		charCount += len(C.GoString(message.content))
+	}
+
+	bufSize := max(charCount*2, 256)
+
+	for {
+		buf := make([]byte, bufSize)
+		strLen := C.llama_chat_apply_template(cStr, (*ChatMessage)(unsafe.Pointer(&chat[0])), C.size_t(len(chat)), C.bool(addAssistant), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(bufSize))
+		runtime.KeepAlive(chat)
+
+		if strLen < 0 {
+			log.Fatalf("ApplyChatTemplate: llama_chat_apply_template failed with code %d\n", strLen)
+		}
+
+		n := int(strLen)
+
+		if strLen == 0 {
+			return ""
+		} else if n > bufSize {
+			bufSize = n
+		} else {
+			return C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen)
+		}
+	}
+}
+
+/*
+
+
+    // Get list of built-in chat templates
+    LLAMA_API int32_t llama_chat_builtin_templates(const char ** output, size_t len);
+
+    //
+    // Sampling API
+    //
+    // Sample usage:
+    //
+    //    // prepare the sampling chain at the start
+    //    auto sparams = llama_sampler_chain_default_params();
+    //
+    //    llama_sampler * smpl = llama_sampler_chain_init(sparams);
+    //
+    //    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(50));
+    //    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(0.9, 1));
+    //    llama_sampler_chain_add(smpl, llama_sampler_init_temp (0.8));
+    //
+    //    // typically, the chain should end with a sampler such as "greedy", "dist" or "mirostat"
+    //    // this sampler will be responsible to select the actual token
+    //    llama_sampler_chain_add(smpl, llama_sampler_init_dist(seed));
+    //
+    //    ...
+    //
+    //    // decoding loop:
+    //    while (...) {
+    //        ...
+    //
+    //        llama_decode(ctx, batch);
+    //
+    //        // sample from the logits of the last token in the batch
+    //        const llama_token id = llama_sampler_sample(smpl, ctx, -1);
+    //
+    //        // accepting the token updates the internal state of certain samplers (e.g. grammar, repetition, etc.)
+    //        llama_sampler_accept(smpl, id);
+    //        ...
+    //    }
+    //
+    //    llama_sampler_free(smpl);
+    //
+    // TODO: In the future, llama_sampler will be utilized to offload the sampling to the backends (e.g. GPU).
+    //
+
+    typedef void * llama_sampler_context_t;
+
+    // user code can implement the interface below in order to create custom llama_sampler
+    struct llama_sampler_i {
+        const char *           (*name)  (const struct llama_sampler * smpl);                                 // can be NULL
+        void                   (*accept)(      struct llama_sampler * smpl, llama_token token);              // can be NULL
+        void                   (*apply) (      struct llama_sampler * smpl, llama_token_data_array * cur_p); // required
+        void                   (*reset) (      struct llama_sampler * smpl);                                 // can be NULL
+        struct llama_sampler * (*clone) (const struct llama_sampler * smpl);                                 // can be NULL if ctx is NULL
+        void                   (*free)  (      struct llama_sampler * smpl);                                 // can be NULL if ctx is NULL
+
+        // TODO: API for internal libllama usage for appending the sampling to an existing ggml_cgraph
+        //void (*apply_ggml) (struct llama_sampler * smpl, ...);
+    };
+
+    struct llama_sampler {
+        const struct llama_sampler_i * iface;
+        llama_sampler_context_t        ctx;
+    };
+
+    // mirror of llama_sampler_i:
+    LLAMA_API struct llama_sampler * llama_sampler_init  (const struct llama_sampler_i * iface, llama_sampler_context_t ctx);
+    LLAMA_API const char *           llama_sampler_name  (const struct llama_sampler * smpl);
+    LLAMA_API void                   llama_sampler_accept(      struct llama_sampler * smpl, llama_token token);
+    LLAMA_API void                   llama_sampler_apply (      struct llama_sampler * smpl, llama_token_data_array * cur_p);
+    LLAMA_API void                   llama_sampler_reset (      struct llama_sampler * smpl);
+    LLAMA_API struct llama_sampler * llama_sampler_clone (const struct llama_sampler * smpl);
+    // important: do not free if the sampler has been added to a llama_sampler_chain (via llama_sampler_chain_add)
+    LLAMA_API void                   llama_sampler_free  (      struct llama_sampler * smpl);
+
+    // llama_sampler_chain
+    // a type of llama_sampler that can chain multiple samplers one after another
+
+    LLAMA_API struct llama_sampler * llama_sampler_chain_init(struct llama_sampler_chain_params params);
+
+    // important: takes ownership of the sampler object and will free it when llama_sampler_free is called
+    LLAMA_API void                   llama_sampler_chain_add(      struct llama_sampler * chain, struct llama_sampler * smpl);
+    LLAMA_API struct llama_sampler * llama_sampler_chain_get(const struct llama_sampler * chain, int32_t i);
+    LLAMA_API int                    llama_sampler_chain_n  (const struct llama_sampler * chain);
+
+    // after removing a sampler, the chain will no longer own it, and it will not be freed when the chain is freed
+    LLAMA_API struct llama_sampler * llama_sampler_chain_remove(   struct llama_sampler * chain, int32_t i);
+
+    // available samplers:
+
+    LLAMA_API struct llama_sampler * llama_sampler_init_greedy(void);
+    LLAMA_API struct llama_sampler * llama_sampler_init_dist  (uint32_t seed);
+
+    /// @details Top-K sampling described in academic paper "The Curious Case of Neural Text Degeneration" https://arxiv.org/abs/1904.09751
+    /// Setting k <= 0 makes this a noop
+    LLAMA_API struct llama_sampler * llama_sampler_init_top_k      (int32_t k);
+
+    /// @details Nucleus sampling described in academic paper "The Curious Case of Neural Text Degeneration" https://arxiv.org/abs/1904.09751
+    LLAMA_API struct llama_sampler * llama_sampler_init_top_p      (float   p, size_t min_keep);
+
+    /// @details Minimum P sampling as described in https://github.com/ggml-org/llama.cpp/pull/3841
+    LLAMA_API struct llama_sampler * llama_sampler_init_min_p      (float   p, size_t min_keep);
+
+    /// @details Locally Typical Sampling implementation described in the paper https://arxiv.org/abs/2202.00666.
+    LLAMA_API struct llama_sampler * llama_sampler_init_typical    (float   p, size_t min_keep);
+
+    /// #details Updates the logits l_i` = l_i/t. When t <= 0.0f, the maximum logit is kept at it's original value, the rest are set to -inf
+    LLAMA_API struct llama_sampler * llama_sampler_init_temp       (float   t);
+
+    /// @details Dynamic temperature implementation (a.k.a. entropy) described in the paper https://arxiv.org/abs/2309.02772.
+    LLAMA_API struct llama_sampler * llama_sampler_init_temp_ext   (float   t, float   delta, float exponent);
+
+    /// @details XTC sampler as described in https://github.com/oobabooga/text-generation-webui/pull/6335
+    LLAMA_API struct llama_sampler * llama_sampler_init_xtc        (float   p, float   t,     size_t min_keep, uint32_t seed);
+
+    /// @details Top n sigma sampling as described in academic paper "Top-nσ: Not All Logits Are You Need" https://arxiv.org/pdf/2411.07641
+    LLAMA_API struct llama_sampler * llama_sampler_init_top_n_sigma(float   n);
+
+    /// @details Mirostat 1.0 algorithm described in the paper https://arxiv.org/abs/2007.14966. Uses tokens instead of words.
+    /// @param candidates A vector of `llama_token_data` containing the candidate tokens, their probabilities (p), and log-odds (logit) for the current position in the generated text.
+    /// @param tau  The target cross-entropy (or surprise) value you want to achieve for the generated text. A higher value corresponds to more surprising or less predictable text, while a lower value corresponds to less surprising or more predictable text.
+    /// @param eta The learning rate used to update `mu` based on the error between the target and observed surprisal of the sampled word. A larger learning rate will cause `mu` to be updated more quickly, while a smaller learning rate will result in slower updates.
+    /// @param m The number of tokens considered in the estimation of `s_hat`. This is an arbitrary value that is used to calculate `s_hat`, which in turn helps to calculate the value of `k`. In the paper, they use `m = 100`, but you can experiment with different values to see how it affects the performance of the algorithm.
+    /// @param mu Maximum cross-entropy. This value is initialized to be twice the target cross-entropy (`2 * tau`) and is updated in the algorithm based on the error between the target and observed surprisal.
+    LLAMA_API struct llama_sampler * llama_sampler_init_mirostat(
+                             int32_t   n_vocab,
+                            uint32_t   seed,
+                               float   tau,
+                               float   eta,
+                             int32_t   m);
+
+    /// @details Mirostat 2.0 algorithm described in the paper https://arxiv.org/abs/2007.14966. Uses tokens instead of words.
+    /// @param candidates A vector of `llama_token_data` containing the candidate tokens, their probabilities (p), and log-odds (logit) for the current position in the generated text.
+    /// @param tau  The target cross-entropy (or surprise) value you want to achieve for the generated text. A higher value corresponds to more surprising or less predictable text, while a lower value corresponds to less surprising or more predictable text.
+    /// @param eta The learning rate used to update `mu` based on the error between the target and observed surprisal of the sampled word. A larger learning rate will cause `mu` to be updated more quickly, while a smaller learning rate will result in slower updates.
+    /// @param mu Maximum cross-entropy. This value is initialized to be twice the target cross-entropy (`2 * tau`) and is updated in the algorithm based on the error between the target and observed surprisal.
+    LLAMA_API struct llama_sampler * llama_sampler_init_mirostat_v2(
+                            uint32_t   seed,
+                               float   tau,
+                               float   eta);
+
+    /// @details Intializes a GBNF grammar, see grammars/README.md for details.
+    /// @param vocab The vocabulary that this grammar will be used with.
+    /// @param grammar_str The production rules for the grammar, encoded as a string. Returns an empty grammar if empty. Returns NULL if parsing of grammar_str fails.
+    /// @param grammar_root The name of the start symbol for the grammar.
+    LLAMA_API struct llama_sampler * llama_sampler_init_grammar(
+            const struct llama_vocab * vocab,
+                          const char * grammar_str,
+                          const char * grammar_root);
+
+/// @details Lazy grammar sampler, introduced in https://github.com/ggml-org/llama.cpp/pull/9639
+    /// @param trigger_patterns A list of patterns that will trigger the grammar sampler. Pattern will be matched from the start of the generation output, and grammar sampler will be fed content starting from its first match group.
+    /// @param trigger_tokens A list of tokens that will trigger the grammar sampler. Grammar sampler will be fed content starting from the trigger token included.
+    LLAMA_API struct llama_sampler * llama_sampler_init_grammar_lazy_patterns(
+        const struct llama_vocab * vocab,
+                      const char * grammar_str,
+                      const char * grammar_root,
+                     const char ** trigger_patterns,
+                            size_t num_trigger_patterns,
+               const llama_token * trigger_tokens,
+                            size_t num_trigger_tokens);
+
+
+    /// NOTE: Avoid using on the full vocabulary as searching for repeated tokens can become slow. For example, apply top-k or top-p sampling first.
+    LLAMA_API struct llama_sampler * llama_sampler_init_penalties(
+                             int32_t   penalty_last_n,   // last n tokens to penalize (0 = disable penalty, -1 = context size)
+                               float   penalty_repeat,   // 1.0 = disabled
+                               float   penalty_freq,     // 0.0 = disabled
+                               float   penalty_present); // 0.0 = disabled
+
+    ///  @details DRY sampler, designed by p-e-w, as described in: https://github.com/oobabooga/text-generation-webui/pull/5677, porting Koboldcpp implementation authored by pi6am: https://github.com/LostRuins/koboldcpp/pull/982
+    LLAMA_API struct llama_sampler * llama_sampler_init_dry(
+            const struct llama_vocab *  vocab,
+                             int32_t    n_ctx_train,
+                               float    dry_multiplier,
+                               float    dry_base,
+                             int32_t    dry_allowed_length,
+                             int32_t    dry_penalty_last_n,
+                          const char ** seq_breakers,
+                              size_t    num_breakers);
+
+    LLAMA_API struct llama_sampler * llama_sampler_init_logit_bias(
+                             int32_t   n_vocab,
+                             int32_t   n_logit_bias,
+              const llama_logit_bias * logit_bias);
+
+    // this sampler is meant to be used for fill-in-the-middle infilling
+    // it's supposed to be used after top_k + top_p sampling
+    //
+    // 1. if the sum of the EOG probs times the number of candidates is higher than the sum of the other probs -> pick EOG
+    // 2. combine probs of tokens that have the same prefix
+    //
+    // example:
+    //
+    // - before:
+    //   "hel":   0.5
+    //   "hell":  0.2
+    //   "hello": 0.1
+    //   "dummy": 0.1
+    //
+    // - after:
+    //   "hel":   0.8
+    //   "dummy": 0.1
+    //
+    // 3. discard non-EOG tokens with low prob
+    // 4. if no tokens are left -> pick EOT
+    //
+    LLAMA_API struct llama_sampler * llama_sampler_init_infill(const struct llama_vocab * vocab);
+
+    // Returns the seed used by the sampler if applicable, LLAMA_DEFAULT_SEED otherwise
+    LLAMA_API uint32_t llama_sampler_get_seed(const struct llama_sampler * smpl);
+
+    /// @details Sample and accept a token from the idx-th output of the last evaluation
+    //
+    // Shorthand for:
+    //    const auto * logits = llama_get_logits_ith(ctx, idx);
+    //    llama_token_data_array cur_p = { ... init from logits ... };
+    //    llama_sampler_apply(smpl, &cur_p);
+    //    auto token = cur_p.data[cur_p.selected].id;
+    //    llama_sampler_accept(smpl, token);
+    //    return token;
+    // Returns the sampled token
+    LLAMA_API llama_token llama_sampler_sample(struct llama_sampler * smpl, struct llama_context * ctx, int32_t idx);
+
+    // TODO: extend in the future
+    //LLAMA_API void llama_decode_with_sampler(struct llama_context * ctx, struct llama_sampler * smpl, struct llama_batch batch, ...);
+
+    //
+    // Model split
+    //
+
+    /// @details Build a split GGUF final path for this chunk.
+    ///          llama_split_path(split_path, sizeof(split_path), "/models/ggml-model-q4_0", 2, 4) => split_path = "/models/ggml-model-q4_0-00002-of-00004.gguf"
+    //  Returns the split_path length.
+    LLAMA_API int llama_split_path(char * split_path, size_t maxlen, const char * path_prefix, int split_no, int split_count);
+
+    /// @details Extract the path prefix from the split_path if and only if the split_no and split_count match.
+    ///          llama_split_prefix(split_prefix, 64, "/models/ggml-model-q4_0-00002-of-00004.gguf", 2, 4) => split_prefix = "/models/ggml-model-q4_0"
+    //  Returns the split_prefix length.
+    LLAMA_API int llama_split_prefix(char * split_prefix, size_t maxlen, const char * split_path, int split_no, int split_count);
+
+    // Print system information
+    LLAMA_API const char * llama_print_system_info(void);
+
+    // Set callback for all future logging events.
+    // If this is not called, or NULL is supplied, everything is output on stderr.
+    LLAMA_API void llama_log_set(ggml_log_callback log_callback, void * user_data);
 
 */
