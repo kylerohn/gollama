@@ -10,7 +10,6 @@ package adapters
 #include <stdio.h>
 #include <ggml.h>
 #include <llama.h>
-#include <shims.h>
 */
 import "C"
 import (
