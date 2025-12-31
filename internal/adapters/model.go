@@ -47,6 +47,10 @@ func ModelNumSwa(model *Model) int32 {
 	return int32(C.llama_model_n_swa(model))
 }
 
+func FreeModel(model *Model) {
+	C.llama_model_free(model)
+}
+
 // Model's RoPE frequency scaling factor
 func ModelRopeFreqScaleTrain(model *Model) float32 {
 	return float32(C.llama_model_rope_freq_scale_train(model))
@@ -177,7 +181,6 @@ func ModelChatTemplate(model *Model, name string) string {
 	} else {
 		res = C.llama_model_chat_template(model, nil)
 	}
-	defer C.free(unsafe.Pointer(res))
 
 	if res == nil {
 		if name == "" {

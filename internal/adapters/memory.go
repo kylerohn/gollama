@@ -65,7 +65,7 @@ func MinMemorySequence(mem MemoryT, seqId int32) int32 {
 // Returns the largest position present in the memory for the specified sequence
 // Note that all positions in the range [pos_min, pos_max] are guaranteed to be present in the memory
 // Return -1 if the sequence is empty
-func MaxMemorySequence(mem MemoryT, seqId int32) int32 {
+func MemorySequenceMax(mem MemoryT, seqId int32) int32 {
 	return int32(C.llama_memory_seq_pos_max(mem, C.int32_t(seqId)))
 }
 

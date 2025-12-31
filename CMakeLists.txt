@@ -5,4 +5,3 @@ set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "" FORCE)
 
 add_subdirectory(external/llama.cpp)
-add_subdirectory(shims)

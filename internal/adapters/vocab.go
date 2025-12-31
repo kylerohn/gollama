@@ -127,16 +127,14 @@ func VocabFimSep(vocab *Vocab) TokenT {
 // configuration. If parseSpecial is true, special and control tokens are
 // interpreted as tokens instead of plain text; parseSpecial does not insert
 // a leading space.
-func Tokenize(vocab *Vocab, text string, nTokensMax int32, addSpecial bool, parseSpecial bool) []TokenT {
+func Tokenize(vocab *Vocab, text string, addSpecial bool, parseSpecial bool) []TokenT {
 	cStr := C.CString(text)
 	defer C.free(unsafe.Pointer(cStr))
 
-	if nTokensMax < 1 {
-		log.Fatalf("Tokenize: max tokens is less than 1 (%d)\n", nTokensMax)
-	}
+	nTokensMax := -C.llama_tokenize(vocab, cStr, C.int32_t(len(text)), nil, 0, C.bool(addSpecial), C.bool(parseSpecial))
 
 	buf := make([]TokenT, nTokensMax)
-	ok := C.llama_tokenize(vocab, cStr, C.int32_t(len(text)), (*TokenT)(unsafe.Pointer(&buf[0])), C.int32_t(nTokensMax), C.bool(addSpecial), C.bool(parseSpecial))
+	ok := C.llama_tokenize(vocab, cStr, C.int32_t(len(text)), (*TokenT)(unsafe.Pointer(&buf[0])), nTokensMax, C.bool(addSpecial), C.bool(parseSpecial))
 
 	if ok < 0 {
 		log.Fatalf("Tokenize: llama_tokenize failed with code %d\n", ok)

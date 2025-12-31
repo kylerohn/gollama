@@ -53,7 +53,6 @@ import (
 // TODO: In the future, llama_sampler will be utilized to offload the sampling to the backends (e.g. GPU).
 //
 
-
 func SamplerName(smpl *Sampler) string {
 	cStr := C.llama_sampler_name(smpl)
 
@@ -80,7 +79,6 @@ func SamplerClone(smpl *Sampler) *Sampler {
 func SamplerFree(smpl *Sampler) {
 	C.llama_sampler_free(smpl)
 }
-
 
 // llama_sampler_chain
 // a type of llama_sampler that can chain multiple samplers one after another
@@ -314,19 +312,21 @@ func SamplerGetSeed(smpl *Sampler) uint32 {
 	return uint32(C.llama_sampler_get_seed(smpl))
 }
 
-
 // Sample and accept a token from the idx-th output of the last evaluation
 //
 // Shorthand for:
-//    const auto * logits = llama_get_logits_ith(ctx, idx);
-//    llama_token_data_array cur_p = { ... init from logits ... };
-//    llama_sampler_apply(smpl, &cur_p);
-//    auto token = cur_p.data[cur_p.selected].id;
-//    llama_sampler_accept(smpl, token);
-//    return token;
+//
+//	const auto * logits = llama_get_logits_ith(ctx, idx);
+//	llama_token_data_array cur_p = { ... init from logits ... };
+//	llama_sampler_apply(smpl, &cur_p);
+//	auto token = cur_p.data[cur_p.selected].id;
+//	llama_sampler_accept(smpl, token);
+//	return token;
+//
 // Returns the sampled token
-func SamplerSample(smpl *Sampler, ctx *Context, idx int32) TokenT{
+func SamplerSample(smpl *Sampler, ctx *Context, idx int32) TokenT {
 	return C.llama_sampler_sample(smpl, ctx, C.int32_t(idx))
 }
+
 // TODO: extend in the future (look for changes in llama.cpp)
 //LLAMA_API void llama_decode_with_sampler(struct llama_context * ctx, struct llama_sampler * smpl, struct llama_batch batch, ...);

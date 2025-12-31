@@ -107,14 +107,31 @@ func ApplyChatTemplate(tmpl string, chat []ChatMessage, addAssistant bool) strin
 
 	charCount := 0
 	for _, message := range chat {
-		charCount += len(C.GoString(message.content))
+		charCount += len(message.Content)
+	}
+
+	cChat := make([]ChatMessageT, len(chat))
+
+	for idx, msg := range chat {
+		cRole := C.CString(msg.Role)
+		cContent := C.CString(msg.Content)
+		defer C.free(unsafe.Pointer(cRole))
+		defer C.free(unsafe.Pointer(cContent))
+
+		cChat[idx] = ChatMessageT{cRole, cContent}
 	}
 
 	bufSize := max(charCount*2, 256)
 
 	for {
 		buf := make([]byte, bufSize)
-		strLen := C.llama_chat_apply_template(cStr, (*ChatMessage)(unsafe.Pointer(&chat[0])), C.size_t(len(chat)), C.bool(addAssistant), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(bufSize))
+		strLen := C.llama_chat_apply_template(
+			cStr, 
+			(*ChatMessageT)(unsafe.Pointer(&cChat[0])), 
+			C.size_t(len(chat)), C.bool(addAssistant), 
+			(*C.char)(unsafe.Pointer(&buf[0])), 
+			C.int32_t(bufSize),
+		)
 		runtime.KeepAlive(chat)
 
 		if strLen < 0 {
@@ -206,7 +223,6 @@ func GetSystemInformation() string {
 // If this is not called, or NULL is supplied, everything is output on stderr.
 //    LLAMA_API void llama_log_set(ggml_log_callback log_callback, void * user_data);
 
-
 //
 // Performance utils
 //
@@ -214,48 +230,124 @@ func GetSystemInformation() string {
 //
 
 /*
-    LLAMA_API struct llama_perf_context_data llama_perf_context      (const struct llama_context * ctx);
-    LLAMA_API void                           llama_perf_context_print(const struct llama_context * ctx);
-    LLAMA_API void                           llama_perf_context_reset(      struct llama_context * ctx);
+   LLAMA_API struct llama_perf_context_data llama_perf_context      (const struct llama_context * ctx);
+   LLAMA_API void                           llama_perf_context_print(const struct llama_context * ctx);
+   LLAMA_API void                           llama_perf_context_reset(      struct llama_context * ctx);
 
-    // NOTE: the following work only with samplers constructed via llama_sampler_chain_init
-    LLAMA_API struct llama_perf_sampler_data llama_perf_sampler      (const struct llama_sampler * chain);
-    LLAMA_API void                           llama_perf_sampler_print(const struct llama_sampler * chain);
-    LLAMA_API void                           llama_perf_sampler_reset(      struct llama_sampler * chain);
+   // NOTE: the following work only with samplers constructed via llama_sampler_chain_init
+   LLAMA_API struct llama_perf_sampler_data llama_perf_sampler      (const struct llama_sampler * chain);
+   LLAMA_API void                           llama_perf_sampler_print(const struct llama_sampler * chain);
+   LLAMA_API void                           llama_perf_sampler_reset(      struct llama_sampler * chain);
 
-    // print a breakdown of per-device memory use via LLAMA_LOG:
-    LLAMA_API void llama_memory_breakdown_print(const struct llama_context * ctx);
+   // print a breakdown of per-device memory use via LLAMA_LOG:
+   LLAMA_API void llama_memory_breakdown_print(const struct llama_context * ctx);
 
-    //
-    // training
-    //
+   //
+   // training
+   //
 
-    // function that returns whether or not a given tensor contains trainable parameters
-    typedef bool (*llama_opt_param_filter)(const struct ggml_tensor * tensor, void * userdata);
+   // function that returns whether or not a given tensor contains trainable parameters
+   typedef bool (*llama_opt_param_filter)(const struct ggml_tensor * tensor, void * userdata);
 
-    // always returns true
-    LLAMA_API bool llama_opt_param_filter_all(const struct ggml_tensor * tensor, void * userdata);
+   // always returns true
+   LLAMA_API bool llama_opt_param_filter_all(const struct ggml_tensor * tensor, void * userdata);
 
-    struct llama_opt_params {
-        uint32_t n_ctx_train; // assumed context size post training, use context size specified in llama_context if 0
+   struct llama_opt_params {
+       uint32_t n_ctx_train; // assumed context size post training, use context size specified in llama_context if 0
 
-        llama_opt_param_filter param_filter; // callback for determining which tensors contain trainable parameters
-        void * param_filter_ud;              // userdata for determining which tensors contain trainable parameters
+       llama_opt_param_filter param_filter; // callback for determining which tensors contain trainable parameters
+       void * param_filter_ud;              // userdata for determining which tensors contain trainable parameters
 
-        ggml_opt_get_optimizer_params get_opt_pars; // callback for calculating optimizer parameters
-        void * get_opt_pars_ud;                     // userdata for calculating optimizer parameters
+       ggml_opt_get_optimizer_params get_opt_pars; // callback for calculating optimizer parameters
+       void * get_opt_pars_ud;                     // userdata for calculating optimizer parameters
 
-        enum ggml_opt_optimizer_type optimizer_type;
-    };
+       enum ggml_opt_optimizer_type optimizer_type;
+   };
 
-    LLAMA_API void llama_opt_init(struct llama_context * lctx, struct llama_model * model, struct llama_opt_params lopt_params);
+   LLAMA_API void llama_opt_init(struct llama_context * lctx, struct llama_model * model, struct llama_opt_params lopt_params);
 
-    LLAMA_API void llama_opt_epoch(
-            struct llama_context    * lctx,
-            ggml_opt_dataset_t        dataset,
-            ggml_opt_result_t         result_train,
-            ggml_opt_result_t         result_eval,
-            int64_t                   idata_split,
-            ggml_opt_epoch_callback   callback_train,
-            ggml_opt_epoch_callback   callback_eval);
+   LLAMA_API void llama_opt_epoch(
+           struct llama_context    * lctx,
+           ggml_opt_dataset_t        dataset,
+           ggml_opt_result_t         result_train,
+           ggml_opt_result_t         result_eval,
+           int64_t                   idata_split,
+           ggml_opt_epoch_callback   callback_train,
+           ggml_opt_epoch_callback   callback_eval);
 */
+
+//
+// Local Utils
+//
+
+// ModelParams setters
+
+func SetNumGPULayers(modelParams *ModelParams, n int32) {
+	modelParams.n_gpu_layers = C.int32_t(n)
+}
+
+// ContextParams setters
+
+func SetNumCtx(contextParams *ContextParams, n uint32) {
+	contextParams.n_ctx = C.uint32_t(n)
+}
+
+func SetNumBatch(contextParams *ContextParams, n uint32) {
+	contextParams.n_batch = C.uint32_t(n)
+}
+
+// Batch helpers
+
+// Load values for a single sequence batch
+func LoadSingleBatch(batch *Batch, tokens *[]TokenT, kvOffset uint) {
+	n := len(*tokens)
+	if n == 0 {
+		batch.n_tokens = 0
+		return
+	}
+
+	tokenView := unsafe.Slice(batch.token, n)
+	posView := unsafe.Slice(batch.pos, n)
+	logitView := unsafe.Slice(batch.logits, n)
+	seqIdView := unsafe.Slice(batch.n_seq_id, n)
+
+	seqPtrView := unsafe.Slice(batch.seq_id, n)
+
+	for idx, token := range *tokens {
+		log.Println("Pos:", idx + int(kvOffset))
+		tokenView[idx] = token
+		posView[idx] = C.int32_t(idx) + C.int32_t(kvOffset)
+		seqIdView[idx] = 1
+		seqIDs := unsafe.Slice(seqPtrView[idx], 1)
+		seqIDs[0] = 0
+
+		if idx == (n - 1) {
+			logitView[idx] = 1
+		} else {
+			logitView[idx] = 0
+		}
+	}
+
+	batch.n_tokens = C.int32_t(n)
+}
+
+// Load values for a single sequence batch
+func LoadSingleBatchSimple(batch *Batch, tokens *[]TokenT) {
+	n := len(*tokens)
+	if n == 0 {
+		batch.n_tokens = 0
+		return
+	}
+
+	tokView := unsafe.Slice(batch.token, n)
+
+	copy(tokView, *tokens)
+
+	batch.n_tokens = C.int32_t(n)
+	batch.embd = nil
+	batch.pos = nil
+	batch.n_seq_id = nil
+	batch.seq_id = nil
+	batch.logits = nil
+
+}

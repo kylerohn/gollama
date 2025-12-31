@@ -75,10 +75,6 @@ func SaveModelToFile(model *Model, modelPath string) {
 	C.llama_model_save_to_file(model, cPath)
 }
 
-func FreeModel(model *Model) {
-	C.llama_model_free(model)
-}
-
 func InitFromModel(model *Model, params ContextParams) *Context {
 	return C.llama_init_from_model(model, params)
 }

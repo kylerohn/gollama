@@ -16,8 +16,6 @@ import (
 	"unsafe"
 )
 
-
-
 func Free(ctx *Context) {
 	C.llama_free(ctx)
 }
@@ -57,7 +55,6 @@ func VocabType(vocab *Vocab) VocabT {
 func VocabNumTokens(vocab *Vocab) int32 {
 	return int32(C.llama_vocab_n_tokens(vocab))
 }
-
 
 // The following functions operate on a llama_context, hence the naming: llama_verb_...
 
@@ -107,7 +104,6 @@ func ApplyAdapterCVec(ctx *Context, data []float32, nEmbed int32, ilStart int32,
 	}
 	runtime.KeepAlive(data)
 }
-
 
 /*
 State/sessions
@@ -305,7 +301,6 @@ func SetSeqStateDataExt(ctx *Context, src []uint8, dest_seq_id int32, flags uint
 	runtime.KeepAlive(src)
 }
 
-
 // Process a batch of tokens.
 // In contrast to llama_decode() - this call does not use KV cache.
 // For encode-decoder contexts, processes the batch using the encoder.
@@ -420,8 +415,6 @@ func GetIthTokenLogits(ctx *Context, vocab *Vocab, i int32) []float32 {
 	return out
 }
 
-
-
 // Get the embeddings for the ith token. For positive indices, Equivalent to:
 // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
 // Negative indicies can be used to access embeddings in reverse order, -1 is the last embedding.
@@ -469,7 +462,6 @@ func GetIthSeqEmbeddings(ctx *Context, model *Model, seq_id int32) []float32 {
 
 	return out
 }
-
 
 // Set abort callback
 // TODO: how tf do I do this

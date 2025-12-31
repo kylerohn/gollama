@@ -14,7 +14,12 @@ type AdapterLoRA = C.struct_llama_adapter_lora
 
 type Batch = C.llama_batch
 
-type ChatMessage = C.llama_chat_message
+type ChatMessageT = C.llama_chat_message
+
+type ChatMessage struct {
+	Role string
+	Content string
+}
 
 type Context = C.struct_llama_context
 type ContextParams = C.struct_llama_context_params
