@@ -783,18 +783,3 @@ func (l *Lora) GetALoRANumInvocationTokens() uint64 {
 func (l *Lora) GetALoRAInvocationTokens() []Token {
 	return adapters.AdapterGetALoRAInvocationTokens(l.ptr)
 }
-
-//
-// Decoding
-//
-
-// Be sure to adapters.FreeBatch the created batch
-func NewSingleBatch(tokens []Token) Batch {
-	nTokens := int32(len(tokens))
-
-	// the batch can contain up to n_tokens, and you can clear() it back to 0 without freeing
-	batch := adapters.InitBatch(nTokens, 0, 1)
-	adapters.LoadSingleBatchSimple(&batch, &tokens)
-
-	return batch
-}

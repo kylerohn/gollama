@@ -47,8 +47,10 @@ func (engine Engine) GenerateSync(prompt string, print bool) string {
 	isFirst := engine.context.IsFirstTurn()
 	tokens := engine.vocab.Tokenize(prompt, isFirst, true)
 
-	batch := NewSingleBatch(tokens)
+	batch := adapters.InitBatch(int32(len(tokens)), 0, 1)
 	defer adapters.FreeBatch(batch)
+
+	adapters.LoadSingleBatch(&batch, &tokens)
 
 	response := ""
 
@@ -59,20 +61,20 @@ func (engine Engine) GenerateSync(prompt string, print bool) string {
 		}
 
 		engine.context.DecodeBatch(batch)
-		newToken := engine.sampler.Sample(&engine.context, -1)
+		nextToken := engine.sampler.Sample(&engine.context, -1)
 
-		if engine.vocab.IsEOG(newToken) {
+		if engine.vocab.IsEOG(nextToken) {
 			break
 		}
 
-		piece := engine.vocab.TokenToPiece(newToken, 0, true)
+		piece := engine.vocab.TokenToPiece(nextToken, 0, true)
 		if print {
 			fmt.Print(piece)
 		}
 		response += piece
 
-		newTokens := []Token{newToken}
-		batch = NewSingleBatch(newTokens)
+		nextTokens := []Token{nextToken}
+		adapters.LoadSingleBatch(&batch, &nextTokens)
 	}
 
 	if print {

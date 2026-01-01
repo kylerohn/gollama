@@ -126,10 +126,10 @@ func ApplyChatTemplate(tmpl string, chat []ChatMessage, addAssistant bool) strin
 	for {
 		buf := make([]byte, bufSize)
 		strLen := C.llama_chat_apply_template(
-			cStr, 
-			(*ChatMessageT)(unsafe.Pointer(&cChat[0])), 
-			C.size_t(len(chat)), C.bool(addAssistant), 
-			(*C.char)(unsafe.Pointer(&buf[0])), 
+			cStr,
+			(*ChatMessageT)(unsafe.Pointer(&cChat[0])),
+			C.size_t(len(chat)), C.bool(addAssistant),
+			(*C.char)(unsafe.Pointer(&buf[0])),
 			C.int32_t(bufSize),
 		)
 		runtime.KeepAlive(chat)
@@ -299,40 +299,7 @@ func SetNumBatch(contextParams *ContextParams, n uint32) {
 // Batch helpers
 
 // Load values for a single sequence batch
-func LoadSingleBatch(batch *Batch, tokens *[]TokenT, kvOffset uint) {
-	n := len(*tokens)
-	if n == 0 {
-		batch.n_tokens = 0
-		return
-	}
-
-	tokenView := unsafe.Slice(batch.token, n)
-	posView := unsafe.Slice(batch.pos, n)
-	logitView := unsafe.Slice(batch.logits, n)
-	seqIdView := unsafe.Slice(batch.n_seq_id, n)
-
-	seqPtrView := unsafe.Slice(batch.seq_id, n)
-
-	for idx, token := range *tokens {
-		log.Println("Pos:", idx + int(kvOffset))
-		tokenView[idx] = token
-		posView[idx] = C.int32_t(idx) + C.int32_t(kvOffset)
-		seqIdView[idx] = 1
-		seqIDs := unsafe.Slice(seqPtrView[idx], 1)
-		seqIDs[0] = 0
-
-		if idx == (n - 1) {
-			logitView[idx] = 1
-		} else {
-			logitView[idx] = 0
-		}
-	}
-
-	batch.n_tokens = C.int32_t(n)
-}
-
-// Load values for a single sequence batch
-func LoadSingleBatchSimple(batch *Batch, tokens *[]TokenT) {
+func LoadSingleBatch(batch *Batch, tokens *[]TokenT) {
 	n := len(*tokens)
 	if n == 0 {
 		batch.n_tokens = 0
