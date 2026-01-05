@@ -282,18 +282,72 @@ func GetSystemInformation() string {
 
 // ModelParams setters
 
+func SetModelParams(params *ModelParams,
+	numGPULayers,
+	mainGPU int32,
+	vocabOnly,
+	useMmap,
+	useMlock,
+	checkTensors,
+	useExtraBufts,
+	noHost,
+	noAlloc bool) {
+	params.n_gpu_layers = C.int32_t(numGPULayers)
+	params.main_gpu = C.int32_t(mainGPU)
+	params.vocab_only = C.bool(vocabOnly)
+	params.use_mmap = C.bool(useMmap)
+	params.use_mlock = C.bool(useMlock)
+	params.check_tensors = C.bool(checkTensors)
+	params.use_extra_bufts = C.bool(useExtraBufts)
+	params.no_host = C.bool(noHost)
+	params.no_alloc = C.bool(noAlloc)
+}
+
 func SetNumGPULayers(modelParams *ModelParams, n int32) {
 	modelParams.n_gpu_layers = C.int32_t(n)
 }
 
 // ContextParams setters
 
-func SetNumCtx(contextParams *ContextParams, n uint32) {
-	contextParams.n_ctx = C.uint32_t(n)
-}
-
-func SetNumBatch(contextParams *ContextParams, n uint32) {
-	contextParams.n_batch = C.uint32_t(n)
+func SetContextParams(params *ContextParams,
+	nCtx,
+	nBatch,
+	nUBatch,
+	nSeqMax uint32,
+	nThreads,
+	nThreadsBatch int32,
+	ropeFreqBase,
+	ropeFreqScale,
+	yarnExtFactor,
+	yarnAttnFactor,
+	yarnBetaFast,
+	yarnBetaSlow float32,
+	yarnOrigCtx uint32,
+	embeddings,
+	offloadKQV,
+	noPerf,
+	opOffload,
+	swaFull,
+	kvUnified bool) {
+	params.n_ctx = C.uint32_t(nCtx)
+	params.n_batch = C.uint32_t(nBatch)
+	params.n_ubatch = C.uint32_t(nUBatch)
+	params.n_seq_max = C.uint32_t(nSeqMax)
+	params.n_threads = C.int32_t(nThreads)
+	params.n_threads_batch = C.int32_t(nThreadsBatch)
+	params.rope_freq_base = C.float(ropeFreqBase)
+	params.rope_freq_scale = C.float(ropeFreqScale)
+	params.yarn_ext_factor = C.float(yarnExtFactor)
+	params.yarn_attn_factor = C.float(yarnAttnFactor)
+	params.yarn_beta_fast = C.float(yarnBetaFast)
+	params.yarn_beta_slow = C.float(yarnBetaSlow)
+	params.yarn_orig_ctx = C.uint32_t(yarnOrigCtx)
+	params.embeddings = C.bool(embeddings)
+	params.offload_kqv = C.bool(offloadKQV)
+	params.no_perf = C.bool(noPerf)
+	params.op_offload = C.bool(opOffload)
+	params.swa_full = C.bool(swaFull)
+	params.kv_unified = C.bool(kvUnified)
 }
 
 // Batch helpers

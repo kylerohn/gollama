@@ -6,19 +6,6 @@ type Batch = adapters.Batch
 type Token = adapters.TokenT
 
 //
-// ModelParams
-//
-
-type ModelParams struct {
-	ptr *adapters.ModelParams
-}
-
-func NewDefaultModelParams() ModelParams {
-	ptr := adapters.ModelDefaultParams()
-	return ModelParams{&ptr}
-}
-
-//
 // Context
 //
 
@@ -782,4 +769,161 @@ func (l *Lora) GetALoRANumInvocationTokens() uint64 {
 // GetALoRAInvocationTokens returns the invocation tokens if this is an ALORA adapter.
 func (l *Lora) GetALoRAInvocationTokens() ([]Token, error) {
 	return adapters.AdapterGetALoRAInvocationTokens(l.ptr)
+}
+
+//
+// Config/Params
+//
+
+type ModelConfig struct {
+	// ggml_backend_dev_t * devices;
+	// const struct llama_model_tensor_buft_override * tensor_buft_overrides; // NULL-terminated list of buffer types to use for tensors that match a pattern
+
+	// General settings
+
+	NumGPULayers int32 // number of layers to store in VRAM, a negative value means all layers
+	MainGPU      int32 // the GPU that is used for the entire model when split_mode is LLAMA_SPLIT_MODE_NONE
+	// enum llama_split_mode split_mode // how to split the model across multiple GPUs
+	// const float * tensor_split; // proportion of the model (layers or rows) to offload to each GPU, size: llama_max_devices()
+
+	// Called with a progress value between 0.0 and 1.0. Pass NULL to disable.
+	// If the provided progress_callback returns true, model loading continues.
+	// If it returns false, model loading is immediately aborted.
+	// llama_progress_callback progress_callback;
+
+	// context pointer passed to the progress callback
+	// void * progress_callback_user_data;
+
+	// const struct llama_model_kv_override * kv_overrides;
+
+	VocabOnly     bool // only load the vocabulary, no weights
+	UseMmap       bool // use mmap if possible
+	UseMlock      bool // force system to keep model in RAM
+	CheckTensors  bool // validate model tensor data
+	UseExtraBufts bool // use extra buffer types (used for weight repacking)
+	NoHost        bool // bypass host buffer allowing extra buffers to be used
+	NoAlloc       bool // only load metadata and simulate memory allocations
+}
+
+func DefaultModelConfig() ModelConfig {
+	return ModelConfig{
+		NumGPULayers:  -1,
+		MainGPU:       0,
+		VocabOnly:     false,
+		UseMmap:       true,
+		UseMlock:      false,
+		CheckTensors:  false,
+		UseExtraBufts: true,
+		NoHost:        false,
+		NoAlloc:       false,
+	}
+}
+
+func SetModelParams(config *ModelConfig, params *adapters.ModelParams) {
+	adapters.SetModelParams(
+		params,
+		config.NumGPULayers,
+		config.MainGPU,
+		config.VocabOnly,
+		config.UseMmap,
+		config.UseMlock,
+		config.CheckTensors,
+		config.UseExtraBufts,
+		config.NoHost,
+		config.NoAlloc,
+	)
+}
+
+type ContextConfig struct {
+	// General settings
+
+	NumCtx          uint32 // text context, 0 = from model
+	NumBatch        uint32 // logical maximum batch size that can be submitted to llama_decode
+	NumUbatch       uint32 // physical maximum batch size
+	NumSeqMax       uint32 // max number of sequences (i.e. distinct states for recurrent models)
+	NumThreads      int32  // number of threads to use for generation
+	NumThreadsBatch int32  // number of threads to use for batch processing
+
+	// RoPE settings
+
+	RopeFreqBase  float32 // RoPE base frequency, 0 = from model
+	RopeFreqScale float32 // RoPE frequency scaling factor, 0 = from model
+	// enum llama_rope_scaling_type rope_scaling_type; // RoPE scaling type, from `enum llama_rope_scaling_type`
+
+	// YaRN settings
+
+	YarnExtFactor  float32 // YaRN extrapolation mix factor, negative = from model
+	YarnAttnFactor float32 // YaRN magnitude scaling factor
+	YarnBetaFast   float32 // YaRN low correction dim
+	YarnBetaSlow   float32 // YaRN high correction dim
+	YarnOrigCtx    uint32  // YaRN original context size
+
+	// Flags
+
+	Embeddings bool // if true, extract embeddings (together with logits)
+	OffloadKqv bool // offload the KQV ops (including the KV cache) to GPU
+	NoPerf     bool // measure performance timings
+	OpOffload  bool // offload host tensor operations to device
+	SwaFull    bool // use full-size SWA cache
+	KvUnified  bool // use a unified buffer across the input sequences when computing the attention
+	// enum llama_pooling_type      pooling_type;      // whether to pool (sum) embedding results by sequence id
+	// enum llama_attention_type    attention_type;    // attention type to use for embeddings
+	// enum llama_flash_attn_type   flash_attn_type;   // when to enable Flash Attention
+
+	// Abort callback
+	// ggml_abort_callback abort_callback;
+	// void *              abort_callback_data;
+
+	// Experimental backend sampler chain configuration
+	// struct llama_sampler_seq_config * samplers;
+	// size_t                            n_samplers;
+}
+
+func DefaultContextConfig() ContextConfig {
+	return ContextConfig{
+		NumCtx:          512,
+		NumBatch:        2048,
+		NumUbatch:       512,
+		NumSeqMax:       1,
+		NumThreads:      4,
+		NumThreadsBatch: 4,
+		RopeFreqBase:    0,
+		RopeFreqScale:   0,
+		YarnExtFactor:   -1,
+		YarnAttnFactor:  -1,
+		YarnBetaFast:    -1,
+		YarnBetaSlow:    -1,
+		YarnOrigCtx:     0,
+		Embeddings:      false,
+		OffloadKqv:      true,
+		NoPerf:          true,
+		OpOffload:       true,
+		SwaFull:         true,
+		KvUnified:       false,
+	}
+}
+
+func SetContextParams(config *ContextConfig, params *adapters.ContextParams) {
+	adapters.SetContextParams(
+		params,
+		config.NumCtx,
+		config.NumBatch,
+		config.NumUbatch,
+		config.NumSeqMax,
+		config.NumThreads,
+		config.NumThreadsBatch,
+		config.RopeFreqBase,
+		config.RopeFreqScale,
+		config.YarnExtFactor,
+		config.YarnAttnFactor,
+		config.YarnBetaFast,
+		config.YarnBetaSlow,
+		config.YarnOrigCtx,
+		config.Embeddings,
+		config.OffloadKqv,
+		config.NoPerf,
+		config.OpOffload,
+		config.SwaFull,
+		config.KvUnified,
+	)
 }

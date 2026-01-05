@@ -20,26 +20,18 @@ type Engine struct {
 
 // Initialize model and system controlled backend
 // TODO add better parameter manipulation
-func InitializeModelDynamicBackend(filepath string, numGPULayers int32, numCtx uint32) Engine {
+func InitializeModelDynamicBackend(filepath string, modelConfig ModelConfig, contextConfig ContextConfig, sampler Sampler) Engine {
 	adapters.GGMLBackendLoadAll()
 
 	modelParams := adapters.ModelDefaultParams()
-	adapters.SetNumGPULayers(&modelParams, numGPULayers)
+	SetModelParams(&modelConfig, &modelParams)
 
 	model := LoadModelFromFile(filepath, modelParams)
 	vocab := model.GetVocab()
 
 	ctxParams := adapters.ContextDefaultParams()
-	adapters.SetNumCtx(&ctxParams, numCtx)
-	adapters.SetNumBatch(&ctxParams, numCtx)
-
+	SetContextParams(&contextConfig, &ctxParams)
 	context := NewContextFromModel(model, ctxParams)
-
-	smplParams := adapters.SamplerChainDefaultParams()
-	sampler := NewSamplerChain(smplParams)
-	sampler.AddSamplerMinP(0.05, 1)
-	sampler.AddSamplerTemp(0.8)
-	sampler.AddSamplerDist(42)
 
 	return Engine{model, vocab, context, sampler}
 }
@@ -48,7 +40,7 @@ func (engine Engine) GenerateSync(prompt string, print bool) string {
 	isFirst := engine.context.IsFirstTurn()
 	tokens, err := engine.vocab.Tokenize(prompt, isFirst, true)
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	batch := adapters.InitBatch(int32(len(tokens)), 0, 1)
@@ -108,7 +100,7 @@ func (engine Engine) SimpleCliChat() {
 
 		tmpl, err := engine.model.ChatTemplate("")
 		if err != nil {
-			log.Fatalf(err.Error())
+			log.Fatal(err.Error())
 		}
 		messages = append(messages, adapters.ChatMessage{Role: "user", Content: text})
 
