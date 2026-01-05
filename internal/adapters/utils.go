@@ -193,7 +193,9 @@ func SamplerInit(iface *SamplerI, ctx SamplerContextT) *Sampler {
 	return C.llama_sampler_init(iface, ctx)
 }
 
-func SamplerChainInit(params SamplerChainParams) *Sampler {
+func SamplerChainInit(noPerf bool) *Sampler {
+	params := SamplerChainDefaultParams()
+	params.no_perf = C.bool(noPerf)
 	return C.llama_sampler_chain_init(params)
 }
 

@@ -465,8 +465,8 @@ type Sampler struct {
 	ptr *adapters.Sampler
 }
 
-func NewSamplerChain(params adapters.SamplerChainParams) Sampler {
-	ptr := adapters.SamplerChainInit(params)
+func NewSamplerChain(noPerf bool) Sampler {
+	ptr := adapters.SamplerChainInit(noPerf)
 	return Sampler{ptr}
 }
 
