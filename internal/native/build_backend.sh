@@ -22,14 +22,10 @@ echo "==> Configuring llama.cpp"
 
 case "$BACKEND" in
     cpu)
-        cmake -S "$ROOT" -B "$BUILD" -G "$GENERATOR" \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF
+        cmake -S "$ROOT" -B "$BUILD" -G "$GENERATOR"
         ;;
     cuda)
         cmake -S "$ROOT" -B "$BUILD" -G "$GENERATOR" \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
             -DGGML_CUDA=ON
         ;;
     *)

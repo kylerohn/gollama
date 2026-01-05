@@ -10,7 +10,7 @@ package adapters
 */
 import "C"
 import (
-	"log"
+	"fmt"
 	"runtime"
 	"unsafe"
 )
@@ -71,7 +71,7 @@ func ModelClsLabel(model *Model, i uint32) string {
 }
 
 // Metadata value as a string by key name
-func ModelMetaValStr(model *Model, key string) string {
+func ModelMetaValStr(model *Model, key string) (string, error) {
 	cKey := C.CString(key)
 	defer C.free(unsafe.Pointer(cKey))
 
@@ -82,16 +82,15 @@ func ModelMetaValStr(model *Model, key string) string {
 	strLen := int32(C.llama_model_meta_val_str(model, cKey, (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("ModelMetaValStr: failed to retrieve key %s\n", key)
+		return "", fmt.Errorf("ModelMetaValStr: failed to retrieve key %s", key)
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("ModelMetaValStr: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("ModelMetaValStr: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // get number of metadata key/value pairs
@@ -100,7 +99,7 @@ func ModelMetaCount(model *Model) int32 {
 }
 
 // get metadata key name by index
-func ModelMetaKeyByIndex(model *Model, i int) string {
+func ModelMetaKeyByIndex(model *Model, i int) (string, error) {
 	// TODO Add Bounded Growth
 	var size uint = 16384
 	buf := make([]byte, size)
@@ -108,20 +107,19 @@ func ModelMetaKeyByIndex(model *Model, i int) string {
 	strLen := int32(C.llama_model_meta_key_by_index(model, C.int(i), (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("ModelMetaKeyByIndex: failed to retrieve key at index %d\n", i)
+		return "", fmt.Errorf("ModelMetaKeyByIndex: failed to retrieve key at index %d", i)
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("ModelMetaKeyByIndex: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("ModelMetaKeyByIndex: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // get metadata key value by index
-func ModelMetaValByIndex(model *Model, i int) string {
+func ModelMetaValByIndex(model *Model, i int) (string, error) {
 	// TODO Add Bounded Growth
 	var size uint = 16384
 	buf := make([]byte, size)
@@ -129,20 +127,19 @@ func ModelMetaValByIndex(model *Model, i int) string {
 	strLen := int32(C.llama_model_meta_val_str_by_index(model, C.int(i), (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("ModelMetaValByIndex: failed to retrieve value at index %d\n", i)
+		return "", fmt.Errorf("ModelMetaValByIndex: failed to retrieve value at index %d", i)
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("ModelMetaValByIndex: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("ModelMetaValByIndex: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // Get a string describing the model type
-func ModelDesc(model *Model) string {
+func ModelDesc(model *Model) (string, error) {
 	// TODO Add Bounded Growth
 	var size uint = 16384
 	buf := make([]byte, size)
@@ -150,16 +147,15 @@ func ModelDesc(model *Model) string {
 	strLen := int32(C.llama_model_desc(model, (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("ModelDesc: failed to retrieve model description metadata \n")
+		return "", fmt.Errorf("ModelDesc: failed to retrieve model description metadata")
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("ModelDesc: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("ModelDesc: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // Returns the total size of all the tensors in the model in bytes
@@ -169,7 +165,7 @@ func ModelSize(model *Model) uint64 {
 
 // Get the default chat template. Returns nullptr if not available
 // If name is "", returns the default chat template
-func ModelChatTemplate(model *Model, name string) string {
+func ModelChatTemplate(model *Model, name string) (string, error) {
 
 	var res *C.char
 
@@ -186,10 +182,10 @@ func ModelChatTemplate(model *Model, name string) string {
 		if name == "" {
 			name = "[DEFAULT]"
 		}
-		log.Fatalf("ModelChatTemplate: could not find chat template for name %s\n", name)
+		return "", fmt.Errorf("ModelChatTemplate: could not find chat template for name %s", name)
 	}
 
-	return C.GoString(res)
+	return C.GoString(res), nil
 }
 
 // Returns the total number of parameters in the model
@@ -229,13 +225,13 @@ func ModelIsDiffusion(model *Model) bool {
 }
 
 // Load a LoRA adapter from file
-func InitAdapterLoRA(model *Model, loraPath string) *AdapterLoRA {
+func InitAdapterLoRA(model *Model, loraPath string) (*AdapterLoRA, error) {
 	cPath := C.CString(loraPath)
 	defer C.free(unsafe.Pointer(cPath))
 
 	adapter := C.llama_adapter_lora_init(model, cPath)
 	if adapter == nil {
-		log.Fatalf("InitAdapterLoRA: failed Loading LoRA adapter from path %s\n", loraPath)
+		return nil, fmt.Errorf("InitAdapterLoRA: failed Loading LoRA adapter from path %s", loraPath)
 	}
-	return adapter
+	return adapter, nil
 }

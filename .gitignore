@@ -1,2 +1,9 @@
+#CMake build dir
 build/
+
+# Go Binaries
 main
+simple_chat
+
+# editors
+.vscode/

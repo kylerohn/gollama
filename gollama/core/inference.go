@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -45,7 +46,10 @@ func InitializeModelDynamicBackend(filepath string, numGPULayers int32, numCtx u
 
 func (engine Engine) GenerateSync(prompt string, print bool) string {
 	isFirst := engine.context.IsFirstTurn()
-	tokens := engine.vocab.Tokenize(prompt, isFirst, true)
+	tokens, err := engine.vocab.Tokenize(prompt, isFirst, true)
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
 
 	batch := adapters.InitBatch(int32(len(tokens)), 0, 1)
 	defer adapters.FreeBatch(batch)
@@ -67,7 +71,12 @@ func (engine Engine) GenerateSync(prompt string, print bool) string {
 			break
 		}
 
-		piece := engine.vocab.TokenToPiece(nextToken, 0, true)
+		piece, err := engine.vocab.TokenToPiece(nextToken, 0, true)
+
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
+
 		if print {
 			fmt.Print(piece)
 		}
@@ -97,7 +106,10 @@ func (engine Engine) SimpleCliChat() {
 			break
 		}
 
-		tmpl := engine.model.ChatTemplate("")
+		tmpl, err := engine.model.ChatTemplate("")
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
 		messages = append(messages, adapters.ChatMessage{Role: "user", Content: text})
 
 		prompt := adapters.ApplyChatTemplate(tmpl, messages, true)

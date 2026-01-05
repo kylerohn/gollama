@@ -10,13 +10,13 @@ package adapters
 */
 import "C"
 import (
-	"log"
+	"fmt"
 	"runtime"
 	"unsafe"
 )
 
 // Metadata value as a string by key name
-func AdapterMetaValStr(adapter *AdapterLoRA, key string) string {
+func AdapterMetaValStr(adapter *AdapterLoRA, key string) (string, error) {
 	cKey := C.CString(key)
 	defer C.free(unsafe.Pointer(cKey))
 
@@ -27,16 +27,15 @@ func AdapterMetaValStr(adapter *AdapterLoRA, key string) string {
 	strLen := int32(C.llama_adapter_meta_val_str(adapter, cKey, (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("AdapterMetaValStr: failed to retrieve key %s\n", key)
+		return "", fmt.Errorf("AdapterMetaValStr: failed to retrieve key %s", key)
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("AdapterMetaValStr: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("AdapterMetaValStr: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // get number of metadata key/value pairs
@@ -45,7 +44,7 @@ func AdapterMetaCount(adapter *AdapterLoRA) int32 {
 }
 
 // get metadata key name by index
-func AdapterMetaKeyByIndex(adapter *AdapterLoRA, i int) string {
+func AdapterMetaKeyByIndex(adapter *AdapterLoRA, i int) (string, error) {
 	// TODO Add Bounded Growth
 	var size uint32 = 16384
 	buf := make([]byte, size)
@@ -53,20 +52,19 @@ func AdapterMetaKeyByIndex(adapter *AdapterLoRA, i int) string {
 	strLen := int32(C.llama_adapter_meta_key_by_index(adapter, C.int(i), (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("AdapterMetaKeyByIndex: failed to retrieve key at index %d\n", i)
+		return "", fmt.Errorf("AdapterMetaKeyByIndex: failed to retrieve key at index %d", i)
 	}
 	if uint32(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("AdapterMetaKeyByIndex: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("AdapterMetaKeyByIndex: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // get metadata key value by index
-func AdapterMetaValByIndex(adapter *AdapterLoRA, i int) string {
+func AdapterMetaValByIndex(adapter *AdapterLoRA, i int) (string, error) {
 	// TODO Add Bounded Growth
 	var size uint = 16384
 	buf := make([]byte, size)
@@ -74,16 +72,15 @@ func AdapterMetaValByIndex(adapter *AdapterLoRA, i int) string {
 	strLen := int32(C.llama_adapter_meta_val_str_by_index(adapter, C.int(i), (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(size)))
 
 	if strLen < 0 {
-		log.Fatalf("AdapterMetaValByIndex: failed to retrieve value at index %d\n", i)
+		return "", fmt.Errorf("AdapterMetaValByIndex: failed to retrieve value at index %d", i)
 	}
 	if uint(strLen) < size-1 {
 		res := C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 		runtime.KeepAlive(buf)
-		return res
+		return res, nil
 	}
 
-	log.Fatalf("AdapterMetaValByIndex: result length too large for buffer (%d > %d)\n", strLen, size)
-	return ""
+	return "", fmt.Errorf("AdapterMetaValByIndex: result length too large for buffer (%d > %d)", strLen, size)
 }
 
 // Manually free a LoRA adapter
@@ -96,12 +93,12 @@ func AdapterLoRAFree(adapter *AdapterLoRA) {
 func AdapterGetALoRANumInvocationTokens(adapter *AdapterLoRA) uint64 {
 	return uint64(C.llama_adapter_get_alora_n_invocation_tokens(adapter))
 }
-func AdapterGetALoRAInvocationTokens(adapter *AdapterLoRA) []TokenT {
+func AdapterGetALoRAInvocationTokens(adapter *AdapterLoRA) ([]TokenT, error) {
 	tokenPtr := C.llama_adapter_get_alora_invocation_tokens(adapter)
 	if tokenPtr == nil {
-		log.Fatalf("AdapterGetLoRAInvocationTokens: internal c method returned nullptr\n")
+		return nil, fmt.Errorf("AdapterGetLoRAInvocationTokens: internal c method returned nullptr")
 	}
 	count := AdapterGetALoRANumInvocationTokens(adapter)
 	res := unsafe.Slice((*TokenT)(tokenPtr), count)
-	return res
+	return res, nil
 }

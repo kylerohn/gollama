@@ -1,4 +1,4 @@
-package simple_chat
+package main
 
 import core "github.com/kylerohn/gollama/gollama/core"
 

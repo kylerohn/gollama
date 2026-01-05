@@ -10,6 +10,7 @@ package adapters
 */
 import "C"
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"unsafe"
@@ -127,7 +128,7 @@ func VocabFimSep(vocab *Vocab) TokenT {
 // configuration. If parseSpecial is true, special and control tokens are
 // interpreted as tokens instead of plain text; parseSpecial does not insert
 // a leading space.
-func Tokenize(vocab *Vocab, text string, addSpecial bool, parseSpecial bool) []TokenT {
+func Tokenize(vocab *Vocab, text string, addSpecial bool, parseSpecial bool) ([]TokenT, error) {
 	cStr := C.CString(text)
 	defer C.free(unsafe.Pointer(cStr))
 
@@ -137,10 +138,10 @@ func Tokenize(vocab *Vocab, text string, addSpecial bool, parseSpecial bool) []T
 	ok := C.llama_tokenize(vocab, cStr, C.int32_t(len(text)), (*TokenT)(unsafe.Pointer(&buf[0])), nTokensMax, C.bool(addSpecial), C.bool(parseSpecial))
 
 	if ok < 0 {
-		log.Fatalf("Tokenize: llama_tokenize failed with code %d\n", ok)
+		return nil, fmt.Errorf("Tokenize: llama_tokenize failed with code %d", ok)
 	}
 	if ok == 0 {
-		return nil
+		return nil, nil
 	}
 	n := int(ok)
 	if n > len(buf) {
@@ -149,29 +150,29 @@ func Tokenize(vocab *Vocab, text string, addSpecial bool, parseSpecial bool) []T
 	}
 
 	runtime.KeepAlive(buf)
-	return buf[:n]
+	return buf[:n], nil
 }
 
 // Token Id -> Piece.
 // Uses the vocabulary in the provided context.
 // User can skip up to 'lStrip' leading spaces before copying (useful when encoding/decoding multiple tokens with 'add_space_prefix')
 // if special is true, special tokens are rendered in the output.
-func TokenToPiece(vocab *Vocab, token TokenT, lstrip int32, special bool) string {
+func TokenToPiece(vocab *Vocab, token TokenT, lstrip int32, special bool) (string, error) {
 	bufSize := 128
 	buf := make([]byte, bufSize)
 
 	strLen := C.llama_token_to_piece(vocab, token, (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(bufSize), C.int32_t(lstrip), C.bool(special))
 
 	if int(strLen) > len(buf) {
-		log.Fatalf("TokenToPiece: length of output string (%d) greater than buffer (%d)\n", strLen, len(buf))
+		return "", fmt.Errorf("TokenToPiece: length of output string (%d) greater than buffer (%d)", strLen, len(buf))
 	}
 
 	if strLen == 0 {
-		return ""
+		return "", nil
 	}
 
 	out := C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen)
-	return out
+	return out, nil
 }
 
 // Detokenize converts a slice of tokens back into text (the inverse of tokenization).
@@ -183,28 +184,21 @@ func TokenToPiece(vocab *Vocab, token TokenT, lstrip int32, special bool) string
 // If removeSpecial is true, BOS/EOS tokens may be removed depending on model
 // configuration. If unparseSpecial is true, special tokens are rendered into
 // the output rather than skipped.
-func Detokenize(vocab *Vocab, tokens []TokenT, textLenMax int32, removeSpecial bool, unparseSpecial bool) string {
+func Detokenize(vocab *Vocab, tokens []TokenT, textLenMax int32, removeSpecial bool, unparseSpecial bool) (string, error) {
 	if textLenMax < 1 {
-		log.Fatalf("Detokenize: texLenMax is less than 1\n")
+		return "", fmt.Errorf("Detokenize: texLenMax is less than 1")
 	}
 
 	if len(tokens) == 0 {
-		return ""
+		return "", nil
 	}
 
 	buf := make([]byte, textLenMax)
 	strLen := C.llama_detokenize(vocab, (*TokenT)(unsafe.Pointer(&tokens[0])), C.int32_t(len(tokens)), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(textLenMax), C.bool(removeSpecial), C.bool(unparseSpecial))
 
 	if strLen < 0 {
-		log.Fatalf("Detokenize: buffer too small, need %d bytes (have %d)\n", -strLen, textLenMax)
+		return "", fmt.Errorf("Detokenize: buffer too small, need %d bytes (have %d)", -strLen, textLenMax)
 	}
 
-	if strLen == 0 {
-		return ""
-	}
-
-	out := C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen)
-
-	runtime.KeepAlive(tokens)
-	return out
+	return C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), strLen), nil
 }

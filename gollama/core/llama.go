@@ -90,7 +90,7 @@ func (c *Context) GetStateSize() uint {
 	return adapters.GetStateSize(c.ptr)
 }
 
-func (c *Context) CopyStateData() []byte {
+func (c *Context) CopyStateData() ([]byte, error) {
 	return adapters.CopyStateData(c.ptr)
 }
 
@@ -98,7 +98,7 @@ func (c *Context) SetStateData(src []byte) {
 	adapters.SetStateData(c.ptr, src)
 }
 
-func (c *Context) LoadStateFromFile(statePath string) []Token {
+func (c *Context) LoadStateFromFile(statePath string) ([]Token, error) {
 	return adapters.LoadStateFromFile(c.ptr, statePath)
 }
 
@@ -279,7 +279,7 @@ func (m *Model) ClsLabel(i uint32) string {
 }
 
 // MetaValStr retrieves a metadata value as a string by key name.
-func (m *Model) MetaValStr(key string) string {
+func (m *Model) MetaValStr(key string) (string, error) {
 	return adapters.ModelMetaValStr(m.ptr, key)
 }
 
@@ -289,17 +289,17 @@ func (m *Model) MetaCount() int32 {
 }
 
 // MetaKeyByIndex returns the metadata key name at the specified index.
-func (m *Model) MetaKeyByIndex(i int) string {
+func (m *Model) MetaKeyByIndex(i int) (string, error) {
 	return adapters.ModelMetaKeyByIndex(m.ptr, i)
 }
 
 // MetaValByIndex returns the metadata value at the specified index.
-func (m *Model) MetaValByIndex(i int) string {
+func (m *Model) MetaValByIndex(i int) (string, error) {
 	return adapters.ModelMetaValByIndex(m.ptr, i)
 }
 
 // Desc returns a string description of the model type.
-func (m *Model) Desc() string {
+func (m *Model) Desc() (string, error) {
 	return adapters.ModelDesc(m.ptr)
 }
 
@@ -308,7 +308,7 @@ func (m *Model) Size() uint64 {
 }
 
 // ChatTemplate returns the chat template for the model. If name is empty, returns the default chat template.
-func (m *Model) ChatTemplate(name string) string {
+func (m *Model) ChatTemplate(name string) (string, error) {
 	return adapters.ModelChatTemplate(m.ptr, name)
 }
 
@@ -341,9 +341,9 @@ func (m *Model) IsDiffusion() bool {
 	return adapters.ModelIsDiffusion(m.ptr)
 }
 
-func (m *Model) InitAdapterLoRA(loraPath string) Lora {
-	lora := adapters.InitAdapterLoRA(m.ptr, loraPath)
-	return Lora{lora}
+func (m *Model) InitAdapterLoRA(loraPath string) (Lora, error) {
+	lora, err := adapters.InitAdapterLoRA(m.ptr, loraPath)
+	return Lora{lora}, err
 }
 
 //
@@ -456,17 +456,17 @@ func (v *Vocab) FimSep() Token {
 	return adapters.VocabFimSep(v.ptr)
 }
 
-func (v *Vocab) Tokenize(text string, addSpecial bool, parseSpecial bool) []Token {
+func (v *Vocab) Tokenize(text string, addSpecial bool, parseSpecial bool) ([]Token, error) {
 	return adapters.Tokenize(v.ptr, text, addSpecial, parseSpecial)
 }
 
 // TokenToPiece converts a token ID to its string representation. lstrip skips leading spaces, special determines whether to render special tokens.
-func (v *Vocab) TokenToPiece(token Token, lstrip int32, special bool) string {
+func (v *Vocab) TokenToPiece(token Token, lstrip int32, special bool) (string, error) {
 	return adapters.TokenToPiece(v.ptr, token, lstrip, special)
 }
 
 // Detokenize converts a slice of tokens back into text. removeSpecial removes BOS/EOS if configured, unparseSpecial renders special tokens.
-func (v *Vocab) Detokenize(tokens []Token, textLenMax int32, removeSpecial bool, unparseSpecial bool) string {
+func (v *Vocab) Detokenize(tokens []Token, textLenMax int32, removeSpecial bool, unparseSpecial bool) (string, error) {
 	return adapters.Detokenize(v.ptr, tokens, textLenMax, removeSpecial, unparseSpecial)
 }
 
@@ -750,7 +750,7 @@ type Lora struct {
 }
 
 // MetaValStr retrieves a metadata value as a string by key name.
-func (l *Lora) MetaValStr(key string) string {
+func (l *Lora) MetaValStr(key string) (string, error) {
 	return adapters.AdapterMetaValStr(l.ptr, key)
 }
 
@@ -760,12 +760,12 @@ func (l *Lora) MetaCount() int32 {
 }
 
 // MetaKeyByIndex returns the metadata key name at the specified index.
-func (l *Lora) MetaKeyByIndex(i int) string {
+func (l *Lora) MetaKeyByIndex(i int) (string, error) {
 	return adapters.AdapterMetaKeyByIndex(l.ptr, i)
 }
 
 // MetaValByIndex returns the metadata value at the specified index.
-func (l *Lora) MetaValByIndex(i int) string {
+func (l *Lora) MetaValByIndex(i int) (string, error) {
 	return adapters.AdapterMetaValByIndex(l.ptr, i)
 }
 
@@ -780,6 +780,6 @@ func (l *Lora) GetALoRANumInvocationTokens() uint64 {
 }
 
 // GetALoRAInvocationTokens returns the invocation tokens if this is an ALORA adapter.
-func (l *Lora) GetALoRAInvocationTokens() []Token {
+func (l *Lora) GetALoRAInvocationTokens() ([]Token, error) {
 	return adapters.AdapterGetALoRAInvocationTokens(l.ptr)
 }

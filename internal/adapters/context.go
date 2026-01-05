@@ -66,11 +66,12 @@ func SetAdapterLoRA(ctx *Context, adapter *AdapterLoRA, scale float32) int32 {
 
 // Remove a specific LoRA adapter from given context
 // Return -1 if the adapter is not present in the context
-func RemoveAdapterLoRA(ctx *Context, adapter *AdapterLoRA) {
+func RemoveAdapterLoRA(ctx *Context, adapter *AdapterLoRA) error {
 	res := C.llama_rm_adapter_lora(ctx, adapter)
 	if res < 0 {
-		log.Fatalf("RemoveAdapterLoRA: adapter at %p not present in context at %p", adapter, ctx)
+		return fmt.Errorf("RemoveAdapterLoRA: adapter at %p not present in context at %p", adapter, ctx)
 	}
+	return nil
 }
 
 // Remove all LoRA adapters from given context
@@ -84,7 +85,7 @@ func ClearAdapterLoRA(ctx *Context) {
 // to an nEmbed x nLayers buffer starting from layer 1.
 // ilStart and ilEnd are the layer range the vector should apply to (both inclusive)
 // See llama_control_vector_load in common to load a control vector.
-func ApplyAdapterCVec(ctx *Context, data []float32, nEmbed int32, ilStart int32, ilEnd int32) {
+func ApplyAdapterCVec(ctx *Context, data []float32, nEmbed int32, ilStart int32, ilEnd int32) error {
 
 	errMsg := "ApplyAdapterCVec: failed to %s loaded control vector\nContext: %p\n%s"
 	var res int32
@@ -99,10 +100,10 @@ func ApplyAdapterCVec(ctx *Context, data []float32, nEmbed int32, ilStart int32,
 	}
 
 	if res < 0 {
-		errMsg = errMsg + "nEmbed: %d\nilStart: %d\nilEnd: %d\n"
-		log.Fatalf(errMsg, nEmbed, ilStart, ilEnd)
+		return fmt.Errorf(errMsg+"nEmbed: %d\nilStart: %d\nilEnd: %d\n", nEmbed, ilStart, ilEnd)
 	}
 	runtime.KeepAlive(data)
+	return nil
 }
 
 /*
@@ -118,43 +119,44 @@ func GetStateSize(ctx *Context) uint {
 
 // Copies the state to the specified destination address.
 // Destination needs to have allocated enough memory.
-func CopyStateData(ctx *Context) []byte {
+func CopyStateData(ctx *Context) ([]byte, error) {
 	stateSize := GetStateSize(ctx)
 	if stateSize == 0 {
-		log.Fatalf("CopyStateData: State Size is zero\n")
+		return nil, fmt.Errorf("CopyStateData: State Size is zero")
 	}
 
 	buf := make([]byte, stateSize)
 	copied := C.llama_state_get_data(ctx, (*C.uint8_t)(unsafe.Pointer(&buf[0])), C.size_t(stateSize))
 
 	if copied == 0 {
-		log.Fatalf("CopyStateData: 0 bytes written to buffer\n")
+		return nil, fmt.Errorf("CopyStateData: 0 bytes written to buffer")
 	}
 	if uint(copied) > stateSize {
-		log.Fatalf("CopyStateData: State larger than precomputed size")
+		return nil, fmt.Errorf("CopyStateData: State larger than precomputed size")
 	}
 	runtime.KeepAlive(buf)
-	return buf[:copied]
+	return buf[:copied], nil
 }
 
 // Set the state reading from the specified address
 // Returns the number of bytes read
-func SetStateData(ctx *Context, src []byte) {
+func SetStateData(ctx *Context, src []byte) error {
 	stateSize := len(src)
 	if stateSize == 0 {
-		log.Fatalf("SetStateData: State Size is zero\n")
+		return fmt.Errorf("SetStateData: State Size is zero")
 	}
 
 	copied := C.llama_state_set_data(ctx, (*C.uint8_t)(unsafe.Pointer(&src[0])), C.size_t(stateSize))
 
 	if copied == 0 {
-		log.Fatalf("SetStateData: 0 bytes written to buffer\n")
+		return fmt.Errorf("SetStateData: 0 bytes written to buffer")
 	}
 	runtime.KeepAlive(src)
+	return nil
 }
 
 // Save/load session file
-func LoadStateFromFile(ctx *Context, statePath string) []TokenT {
+func LoadStateFromFile(ctx *Context, statePath string) ([]TokenT, error) {
 
 	cPath := C.CString(statePath)
 	defer C.free(unsafe.Pointer(cPath))
@@ -162,7 +164,7 @@ func LoadStateFromFile(ctx *Context, statePath string) []TokenT {
 	max := NumCtx(ctx)
 
 	if max < 1 {
-		log.Fatalf("LoadStateFromFile: Context size must be greater than zero\n")
+		return nil, fmt.Errorf("LoadStateFromFile: Context size must be greater than zero")
 	}
 
 	buf := make([]TokenT, max)
@@ -171,14 +173,13 @@ func LoadStateFromFile(ctx *Context, statePath string) []TokenT {
 	ok := C.llama_state_load_file(ctx, cPath, (*TokenT)(unsafe.Pointer(&buf[0])), C.size_t(max), (*C.size_t)(&count))
 
 	if !ok {
-		log.Fatalf("LoadStateFromFile: error loading from file %s\n", statePath)
+		return nil, fmt.Errorf("LoadStateFromFile: error loading from file %s", statePath)
 	}
 
 	runtime.KeepAlive(buf)
 
 	n := min(int(count), len(buf))
-	return buf[:n]
-
+	return buf[:n], nil
 }
 
 func SaveStateToFile(ctx *Context, statePath string, tokens []TokenT) {

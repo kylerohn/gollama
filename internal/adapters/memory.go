@@ -9,7 +9,9 @@ package adapters
 #include <llama.h>
 */
 import "C"
-import "log"
+import (
+	"fmt"
+)
 
 // Clear the memory contents
 // If data == true, the data buffers will also be cleared together with the metadata
@@ -22,10 +24,11 @@ func ClearMemory(mem MemoryT, data bool) {
 // seq_id < 0 : match any sequence
 // p0 < 0     : [0,  p1]
 // p1 < 0     : [p0, inf)
-func RemoveMemorySequence(mem MemoryT, seqId int32, p0 int32, p1 int32) {
+func RemoveMemorySequence(mem MemoryT, seqId int32, p0 int32, p1 int32) error {
 	if !C.llama_memory_seq_rm(mem, C.int32_t(seqId), C.int32_t(p0), C.int32_t(p1)) {
-		log.Fatalf("RemoveMemorySequence: position %d to %d in sequence %d cannot be removed\n", p0, p1, seqId)
+		return fmt.Errorf("RemoveMemorySequence: position %d to %d in sequence %d cannot be removed", p0, p1, seqId)
 	}
+	return nil
 }
 
 // Copy all tokens that belong to the specified sequence to another sequence
