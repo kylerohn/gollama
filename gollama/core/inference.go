@@ -66,7 +66,7 @@ func (engine Engine) GenerateSync(prompt string, print bool) string {
 		piece, err := engine.vocab.TokenToPiece(nextToken, 0, true)
 
 		if err != nil {
-			log.Fatalf(err.Error())
+			log.Fatal(err.Error())
 		}
 
 		if print {
