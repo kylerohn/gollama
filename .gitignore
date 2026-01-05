@@ -7,3 +7,6 @@ simple_chat
 
 # editors
 .vscode/
+
+# Exclude sample dirs
+!simple_chat/

@@ -1,34 +1,36 @@
 # gollama
 
-An LLM inference engine/framework in Go built off llama.cpp
+An LLM inference engine/framework in Go built on top of llama.cpp.
 
 ## Overview
+
+gollama is a Go-native inference engine that embeds llama.cpp directly into Go applications. It focuses on low-level control, performance, and close parity with llama.cpp rather than providing a high-level orchestration or agent framework. The goal is to make llama.cpp feel like a first-class Go dependency, suitable for services, tooling, and experimentation.
 
 ## Dependencies
 
 ### Go
-- Go 1.24 +
+- Go 1.24+
 
 ### Build toolchain
 - CMake
-- C/C++ compiler (gcc/clang)
+- C/C++ compiler (gcc or clang)
 - Make or Ninja
-  
+
 ### OS
-- Only tested on Ubuntu 22.04 and 24.04
-- On Windows use WSL
+- Tested on Ubuntu 22.04 and 24.04
+- On Windows, use WSL
 
-## Install/Build
+## Install / Build
 
-This is not an official Go library (yet), and must be cloned manually.
+This is not an official Go library (yet) and must be cloned manually.
 
-The code in this repository relies on the following submodules:
+The code in this repository relies on the following submodule:
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
-### Clone Repo
+### Clone repo
 
 ```
-git clone --recuse-submodules https://github.com/kylerohn/gollama.git
+git clone --recurse-submodules https://github.com/kylerohn/gollama.git
 ```
 
 #### OR
@@ -38,22 +40,60 @@ git clone https://github.com/kylerohn/gollama.git
 git submodule update --init --recursive
 ```
 
-### Build Backend
+### Build backend
 
-gollama requires llama.cpp to be built to run, which uses go generate:
+gollama requires llama.cpp to be built before use. This is handled via `go generate`:
 
 ```
 go generate ./...
 ```
 
-by default, gollama is built for running on CPU, with CMake using Makefiles, but the following environment variables can be set to change the behavior:
+This step builds the llama.cpp backend and must be re-run if backend-related environment variables change.
 
-generators:
+By default, gollama is built for CPU execution using CMake with Makefiles. The following environment variables can be set to customize the build:
+
+**Generators**
 ```
 LLAMA_GENERATOR=Ninja
 ```
 
-backends:
+**Backends**
 ```
 LLAMA_BACKEND=cuda
 ```
+
+### Run example & test build
+
+You can run the example under `examples/simple_chat` to verify that the build process completed successfully and to see how gollama works. Make sure you have followed the steps under [Build backend](#build-backend) before proceeding.
+
+#### Install GGUF model
+
+Download a GGUF model from Hugging Face or another source.  
+For example: https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF
+
+#### Edit model path
+
+Update the model path in `examples/simple_chat/simple_chat.go`, replacing `path/to/gguf/model` with the actual path where the model is stored.
+
+#### Build & run
+
+> [!IMPORTANT]
+> You must build before running. Using `go run` at this stage will not work.
+
+Build the example:
+```
+go build ./examples/simple_chat
+```
+
+Run it:
+```
+./simple_chat
+```
+
+If successful, this will allow you to interact with the downloaded model.
+
+### Configuration
+
+The `simple_chat` example demonstrates a minimal configuration, primarily the `NumCtx` parameter for defining the context window size.
+
+At present, configuration options closely mirror those provided by llama.cpp rather than abstracting them away. Until formal documentation is added, available settings can be found in `gollama/core/llama.go`, which maps directly to many native llama.cpp parameters.

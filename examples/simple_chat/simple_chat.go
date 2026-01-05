@@ -3,7 +3,7 @@ package main
 import core "github.com/kylerohn/gollama/gollama/core"
 
 func main() {
-	path := "/home/krohn/projects/models/deepseek-qwen/DeepSeek-R1-Distill-Qwen-7B-Q8_0.gguf"
+	path := "/path/to/gguf/model"
 
 	var ctxSize uint32 = 32768
 
