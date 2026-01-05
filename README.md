@@ -4,7 +4,7 @@ An LLM inference engine/framework in Go built on top of llama.cpp.
 
 ## Overview
 
-gollama is a Go-native inference engine that embeds llama.cpp directly into Go applications. It focuses on low-level control, performance, and close parity with llama.cpp rather than providing a high-level orchestration or agent framework. The goal is to make llama.cpp feel like a first-class Go dependency, suitable for services, tooling, and experimentation.
+gollama is still in development and the end goal isn't entirely clear at this point
 
 ## Dependencies
 
